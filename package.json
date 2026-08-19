@@ -1,0 +1,67 @@
+{
+  "name": "app147",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "description": "Class log with an automatic 1-4-7 blurt schedule",
+  "author": "Devil",
+  "scripts": {
+    "dev": "vite --port 5190",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview --port 5190",
+    "electron": "electron .",
+    "exe": "npm run build && node scripts/exe.mjs",
+    "apk": "npm run build && cap sync android && node scripts/apk.mjs",
+    "apk:open": "npm run build && cap sync android && cap open android",
+    "cap:sync": "npm run build && cap sync android",
+    "icons": "python scripts/icon.py && capacitor-assets generate --android"
+  },
+  "build": {
+    "appId": "com.devil.app147",
+    "productName": "147",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "147",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/local-notifications": "^8.3.0",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.1",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "typescript": "~5.7.3",
+    "vite": "^6.4.3"
+  },
+  "dependencies": {
+    "firebase": "^12.17.1"
+  }
+}

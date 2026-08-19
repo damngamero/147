@@ -1,0 +1,26 @@
+node_modules/
+dist/
+release/
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/capacitor-cordova-android-plugins/
+.DS_Store
+.electron-dist/
+winbuild/
+.env.local
+build/
+assets/
+resources/
+
+# Regenerate with: npm run icons
+android/app/src/main/res/mipmap-*/
+android/app/src/main/res/drawable-*/splash.png
+android/app/src/main/res/drawable/splash.png
+android/gradle/wrapper/gradle-wrapper.jar
+android/app/google-services.json
+package-lock.json
