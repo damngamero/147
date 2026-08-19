@@ -14,13 +14,39 @@ import {
 } from '../cloud';
 import { enableNotifications, notificationState } from '../notify';
 import { store } from '../state';
+import {
+  pushSyscal,
+  setSyscalEnabled,
+  syscalEnabled,
+  syscalHasPermission,
+  syscalRequestPermission,
+  syscalStatus,
+  syscalSupported,
+} from '../syscal';
 import { THEMES, currentTheme, setTheme } from '../theme';
 import { startTour } from '../tour';
+import {
+  APP_VERSION,
+  canInstallUpdates,
+  checkForUpdate,
+  installUpdate,
+  requestInstallPermission,
+  updateSupported,
+  type UpdateInfo,
+} from '../update';
 import { askText, confirmBox, onAct, toast } from '../ui';
 import { esc } from '../util';
 
 /** The most recently generated pairing code, shown until replaced or navigated away from. */
 let pairing: PairingCode | null = null;
+
+/** null = not checked yet. Checked once per Settings visit, native side only. */
+let syscalPermission: boolean | null = null;
+
+/** Update check/install state — none of it persists across a reload, deliberately. */
+let updateState: 'idle' | 'checking' | 'none' | 'available' | 'installing' = 'idle';
+let updateInfo: UpdateInfo | null = null;
+let updateError: string | null = null;
 
 function ago(ts: number | null): string {
   if (!ts) return 'never';
@@ -129,6 +155,105 @@ function cloudCard(): string {
     </div>`;
 }
 
+/* ---------- 147 calendar (Android, local, separate) ---------- */
+
+function syscalCard(): string {
+  const on = syscalEnabled();
+  const st = syscalStatus();
+  const granted = syscalPermission === true;
+
+  return `
+    <div class="card">
+      <div class="setting-row" style="padding-top:0">
+        <span class="grow">
+          <div class="title">Keep a separate "147" calendar</div>
+          <div class="sub">
+            A local calendar on this phone, not tied to your Google or Samsung account. It shows
+            up as its own row in Samsung Calendar's calendar list — hide it with one tap without
+            touching your real classes and events. No account, no internet.
+          </div>
+        </span>
+        <button class="btn ${on ? 'primary' : ''}" data-act="syscal-toggle">${on ? 'On' : 'Off'}</button>
+      </div>
+
+      ${
+        on
+          ? `
+        <div class="setting-row">
+          <span class="grow">
+            <div class="title">Status</div>
+            <div class="sub">
+              ${
+                st.pushing
+                  ? 'Writing now…'
+                  : !granted
+                    ? 'Waiting on calendar permission.'
+                    : `Last write ${ago(st.lastPush)}`
+              }
+            </div>
+          </span>
+          ${
+            granted
+              ? '<button class="btn ghost" data-act="syscal-push">Write now</button>'
+              : '<button class="btn primary" data-act="syscal-grant">Grant calendar access</button>'
+          }
+        </div>`
+          : ''
+      }
+
+      ${
+        st.error
+          ? `<p class="small" style="color:var(--warn);margin-top:10px">${esc(st.error)}</p>`
+          : ''
+      }
+    </div>`;
+}
+
+/* ---------- updates (Android sideload only) ---------- */
+
+function updateCard(): string {
+  const busy = updateState === 'checking' || updateState === 'installing';
+
+  return `
+    <div class="card">
+      <div class="setting-row" style="padding-top:0">
+        <span class="grow">
+          <div class="title">147 version ${esc(APP_VERSION)}</div>
+          <div class="sub">
+            There is no app store here, so 147 checks GitHub directly. Nothing happens
+            automatically — you decide when to check and when to install.
+          </div>
+        </span>
+      </div>
+
+      <div class="actions" style="margin-top:12px">
+        ${
+          updateState === 'available' && updateInfo
+            ? `<button class="btn primary" data-act="update-install" ${busy ? 'disabled' : ''}>
+                 ${busy ? 'Installing…' : `Install ${esc(updateInfo.version)}`}
+               </button>`
+            : `<button class="btn ${updateState === 'idle' ? 'primary' : ''}" data-act="update-check" ${busy ? 'disabled' : ''}>
+                 ${busy ? 'Checking…' : 'Check for updates'}
+               </button>`
+        }
+      </div>
+
+      ${
+        updateState === 'available' && updateInfo?.notes
+          ? `<div class="reveal" style="margin-top:12px">${esc(updateInfo.notes).slice(0, 600)}</div>`
+          : ''
+      }
+
+      ${updateState === 'none' ? '<p class="muted small" style="margin-top:10px">Already up to date.</p>' : ''}
+
+      ${
+        updateError
+          ? `<p class="small" style="color:var(--warn);margin-top:10px">${esc(updateError)}</p>`
+          : ''
+      }
+    </div>`;
+}
+
 /* ---------- page ---------- */
 
 export function render(): string {
@@ -140,6 +265,13 @@ export function render(): string {
 
     <h2>Cloud sync</h2>
     ${cloudCard()}
+
+    ${
+      syscalSupported()
+        ? `<h2>147 calendar</h2>
+           ${syscalCard()}`
+        : ''
+    }
 
     <h2>Reminders</h2>
     <div class="card">
@@ -185,10 +317,24 @@ export function render(): string {
         <a class="btn" href="#/help">How 147 works</a>
         <button class="btn ghost" data-act="tour">Replay the walkthrough</button>
       </div>
-    </div>`;
+    </div>
+
+    ${
+      updateSupported()
+        ? `<h2>Updates</h2>
+           ${updateCard()}`
+        : ''
+    }`;
 }
 
 export function wire(root: HTMLElement): void {
+  if (syscalSupported() && syscalPermission === null) {
+    void syscalHasPermission().then((granted) => {
+      syscalPermission = granted;
+      rerender();
+    });
+  }
+
   const file = root.querySelector<HTMLInputElement>('[data-f="file"]');
   file?.addEventListener('change', async () => {
     const f = file.files?.[0];
@@ -282,6 +428,81 @@ export function wire(root: HTMLElement): void {
         pairing = null;
         rerender();
       }
+    }
+
+    if (act === 'syscal-toggle') {
+      setSyscalEnabled(!syscalEnabled());
+      rerender();
+    }
+
+    if (act === 'syscal-grant') {
+      const granted = await syscalRequestPermission();
+      syscalPermission = granted;
+      if (granted) {
+        toast('Calendar access granted');
+        const res = await pushSyscal();
+        toast(res.message);
+      } else {
+        toast('Permission refused');
+      }
+      rerender();
+    }
+
+    if (act === 'syscal-push') {
+      toast('Writing to the 147 calendar…');
+      const res = await pushSyscal();
+      toast(res.message);
+      rerender();
+    }
+
+    if (act === 'update-check') {
+      updateState = 'checking';
+      updateError = null;
+      rerender();
+      const res = await checkForUpdate();
+      if (!res.ok) {
+        updateState = 'idle';
+        updateError = res.message;
+      } else if (res.update) {
+        updateState = 'available';
+        updateInfo = res.update;
+      } else {
+        updateState = 'none';
+        updateInfo = null;
+      }
+      rerender();
+    }
+
+    if (act === 'update-install' && updateInfo) {
+      const allowed = await canInstallUpdates();
+      if (!allowed) {
+        const grant = await confirmBox({
+          title: 'Allow installs from 147?',
+          body: 'Android needs this app switched on as an install source once. You will be sent to a system settings screen — flip the toggle, then come back.',
+          okLabel: 'Continue',
+        });
+        if (!grant) return;
+        const got = await requestInstallPermission();
+        if (!got) {
+          updateError = 'Permission was not granted.';
+          rerender();
+          return;
+        }
+      }
+
+      updateState = 'installing';
+      updateError = null;
+      rerender();
+      const res = await installUpdate(updateInfo);
+      if (!res.ok) {
+        updateState = 'available';
+        updateError = res.message;
+      } else {
+        toast(res.message);
+        updateState = 'idle';
+        updateInfo = null;
+      }
+      rerender();
     }
 
     if (act === 'notify') {
