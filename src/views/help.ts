@@ -78,8 +78,7 @@ export function render(): string {
       Tap any past class to edit it; changing its date moves that topic's blurts with it.</p>
       <p><b>Weak spots</b> — every topic you have rated, worst first, with its average and how
       many times you have been over it. Built entirely from the 1-5 scores.</p>
-      <p><b>Settings</b> (the gear, top right) — themes, cloud sync, 147 Tasks, reminders and
-      backups.</p>
+      <p><b>Settings</b> (the gear, top right) — themes, cloud sync, reminders and backups.</p>
       <p><b>Subjects</b> — the tree. Subject → chapter → topic, where you flag the last topic
       and mark a chapter finished.</p>
     </div>
@@ -96,52 +95,47 @@ export function render(): string {
       you nothing later.</p>
     </div>
 
-    <h2>Cloud sync setup</h2>
+    <h2>Cloud sync setup — no Google sign-in</h2>
     <div class="card guide-body">
       <p>Sync runs on <b>your own</b> Firebase project, so the data stays in an account you
-      control. It is free at this scale. One-time setup:</p>
+      control. It is free at this scale, and there is no Google account involved anywhere — every
+      device signs in <b>anonymously</b> (invisible, no consent screen), and a random code is
+      what actually links your devices together. One-time setup:</p>
       <p>
         1. Go to <b>console.firebase.google.com</b> and create a project.<br />
         2. Add a <b>Web app</b> (the <b>&lt;/&gt;</b> icon). Copy the <b>firebaseConfig</b> block.<br />
-        3. <b>Build → Authentication → Get started → Google</b>, enable it, save.<br />
+        3. <b>Build → Authentication → Sign-in method → Anonymous → Enable.</b><br />
         4. <b>Build → Firestore Database → Create database</b>. Production mode is fine.<br />
         5. Firestore <b>Rules</b> tab, paste this and publish:
       </p>
       <pre class="code">rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null
-                         &amp;&amp; request.auth.uid == uid;
+    match /accounts/{accountKey}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    match /pairs/{code} {
+      allow read, write: if request.auth != null;
     }
   }
 }</pre>
       <p>6. Back in 147: <b>Settings → Cloud sync → Paste Firebase config</b>, then
-      <b>Sign in with Google</b>.</p>
-      <p class="muted small">Those rules mean only you, signed in, can read or write your own
-      documents. Nobody else can touch them, and the config values are safe to paste into the
-      app — they identify the project, they do not grant access.</p>
+      <b>Turn on sync</b>.</p>
+      <p class="muted small">Those rules mean any device that has signed in (anonymously — no
+      account needed) can read or write, as long as it knows the right <code>accountKey</code>.
+      That key is a long random string generated on your first device and never shown on
+      screen — the six-digit codes you actually see are short-lived, single-use pointers to it.</p>
     </div>
 
-    <h2>147 Tasks — semi-automated, no calendar</h2>
+    <h2>Adding a second device</h2>
     <div class="card guide-body">
-      <p>Signing in also asks for tasks permission. Switch <b>Settings → 147 Tasks</b> on and the
-      app creates a Google Task the moment something is due, in its own list called
-      <b>147 Tasks</b> — tick it off from your phone's task widget, or just leave it to the app.</p>
-      <p>It is one-way: 147 is always the source of truth. Clear a blurt in 147 and its task gets
-      marked complete on the next push (a few seconds later, not instantly — that is the
-      "semi-automated" part, it settles rather than firing on every keystroke). Ticking the task
-      complete in Google Tasks itself does <em>not</em> mark it done back here.</p>
-      <p>It reconciles rather than appends, so it stays correct as the schedule changes: finish a
-      chapter and the weekly per-class tasks get marked complete or removed, replaced by whatever
-      the chapter-level schedule produces next. Unlog a class and its task is deleted outright.</p>
-      <p>Only what is actually due gets a task — nothing appears for a blurt that is not due yet,
-      matching what Today shows.</p>
-      <p>For this to work the <b>Google Tasks API</b> has to be enabled in the Google Cloud
-      project behind your Firebase project (console.cloud.google.com → APIs &amp; Services →
-      Library → Google Tasks API → Enable). Firebase makes that project for you.</p>
-      <p class="muted small">The tasks permission expires about an hour after sign-in. If a push
-      says the token expired, sign out and back in.</p>
+      <p>On the device that is already synced: <b>Settings → Cloud sync → Get a pairing code</b>.
+      That shows a six-digit code, valid for ten minutes.</p>
+      <p>On the new device: <b>Settings → Cloud sync → Have a pairing code?</b>, type the six
+      digits in. It adopts the same account and syncs immediately — pulling in everything from
+      the first device, pushing up anything only the new device had.</p>
+      <p class="muted small">The code itself is worthless once redeemed or expired. If you miss
+      the window, just generate a fresh one.</p>
     </div>
 
     <h2>How sync resolves clashes</h2>
@@ -151,9 +145,24 @@ service cloud.firestore {
       clearing a blurt on the phone both survive.</p>
       <p>Deletes leave a marker behind, so something you deleted on one device does not come back
       the next time the other one syncs.</p>
-      <p>Sync runs on sign-in, when the app opens, and a few seconds after any change. There is
-      no manual sync button because there is nothing to press — logging a class or clearing a
-      blurt is what triggers it.</p>
+      <p>Sync runs on launch and a few seconds after any change. There is no manual sync button
+      because there is nothing to press — logging a class or clearing a blurt is what triggers
+      it.</p>
+    </div>
+
+    <h2>The 147 calendar — kept separate from your real one</h2>
+    <div class="card guide-body">
+      <p>On Android, <b>Settings → 147 calendar</b> keeps a dedicated calendar on the phone in
+      step with the schedule — one all-day event per open blurt. It is a <b>local</b> calendar,
+      not linked to your Google or Samsung account, which is what keeps it out of the way: it
+      shows up as its own row in Samsung Calendar's calendar list, and you can hide the whole
+      thing with one tap without touching your actual classes and events.</p>
+      <p>No account, no internet, no OAuth — it only needs the Android calendar permission, the
+      normal kind of permission prompt, not a sign-in page. Every write is a full replace (clear
+      the 147 calendar, write the current schedule fresh), so it is always exactly right and
+      there is nothing to reconcile by hand.</p>
+      <p class="muted small">Web and desktop have no calendar app to write to, so this card only
+      appears on the Android build.</p>
     </div>
 
     <h2>Getting it off this screen</h2>
