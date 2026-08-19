@@ -1,11 +1,88 @@
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
+const { spawn } = require('node:child_process');
 
 // Windows needs this to group and pin the app against a stable identity.
 app.setAppUserModelId('com.devil.app147');
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5190';
 const isDev = !app.isPackaged;
+
+const UPDATE_REPO = 'damngamero/147';
+const UPDATE_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
+
+/** "0.2.0" -> [0, 2, 0], compared numerically part by part — same rule as src/update.ts. */
+function isNewer(latest, current) {
+  const a = latest.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const b = current.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
+// The desktop side of self-update. Unlike the sideloaded APK, the exe can
+// update itself without any user-visible install wizard: the NSIS installer
+// built by electron-builder supports a silent `/S` flag for a per-machine:false
+// (current-user) install, so this downloads it, runs it silently, then hands
+// control back to the exact same exe path via app.relaunch() — which is now
+// the freshly-installed build. userData (where localStorage/IndexedDB live)
+// is a separate folder from the install directory, so the account key and
+// everything else in it survives untouched.
+ipcMain.handle('update:check', async () => {
+  try {
+    const res = await fetch(UPDATE_API, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!res.ok) {
+      return { ok: false, update: null, message: `GitHub said ${res.status} — no release found yet?` };
+    }
+    const rel = await res.json();
+    const version = String(rel.tag_name || '').replace(/^v/i, '');
+    const asset = (rel.assets || []).find((a) => /^147 Setup .*\.exe$/i.test(a.name));
+    const current = app.getVersion();
+
+    if (!version || !isNewer(version, current)) {
+      return { ok: true, update: null, message: `Up to date (${current}).` };
+    }
+    if (!asset) {
+      return { ok: false, update: null, message: `${version} is out but has no installer attached yet.` };
+    }
+    return {
+      ok: true,
+      update: { version, url: asset.browser_download_url, notes: rel.body || '' },
+      message: `${version} is available.`,
+    };
+  } catch (err) {
+    return { ok: false, update: null, message: err && err.message ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle('update:install', async (_event, url) => {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Download failed (${res.status}).`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const out = path.join(app.getPath('temp'), '147-update-installer.exe');
+    fs.writeFileSync(out, buf);
+
+    // /S = silent NSIS install, no wizard. Works without elevation because
+    // the installer is built with perMachine:false (installs under the
+    // current user, not Program Files).
+    await new Promise((resolve, reject) => {
+      const child = spawn(out, ['/S'], { stdio: 'ignore' });
+      child.on('error', reject);
+      child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`Installer exited with code ${code}`))));
+    });
+
+    app.relaunch();
+    app.quit();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err && err.message ? err.message : String(err) };
+  }
+});
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -21,6 +98,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
