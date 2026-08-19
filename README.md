@@ -55,7 +55,8 @@ Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 npm run exe
 ```
 
-Writes `release/147 Setup 0.1.0.exe` (installer) and `release/147 0.1.0.exe` (portable).
+Writes `release/147 Setup <version>.exe` (installer) and `release/147 <version>.exe` (portable),
+version taken straight from `package.json`.
 
 electron-builder normally unzips Electron to `win-unpacked.tmp` and renames that folder; on this
 machine the rename fails with `EPERM` every time (something holds a handle on the freshly
@@ -81,6 +82,21 @@ makes an unsigned release APK instead. The script finds the Android SDK and a JD
 Requirements for the APK: Android Studio's SDK (platform 36) and a JDK 21+. Capacitor 8 rejects
 JDK 17, which is why the script hunts for the bundled one.
 
+### Cutting a release (for self-update to see it)
+
+The APK checks GitHub Releases for updates (see "Self-update" below), so a build only reaches
+phones once it is actually published there:
+
+1. Bump the version — **in two places, they have to match**: `"version"` in `package.json` and
+   `versionName` in `android/app/build.gradle` (bump `versionCode` too, it just counts up).
+2. `npm run apk` and `npm run exe`.
+3. On GitHub: **Releases → Draft a new release**. Tag it `v<version>` (e.g. `v0.3.0`) — the `v`
+   is optional, the app strips it either way. Attach `release/147-debug.apk`. Publish.
+4. Optional: attach the `.exe` files too, for anyone installing the desktop app fresh.
+
+Steps 1-2 are scriptable; step 3 needs a browser session on github.com, so it stays manual (or
+hook up the `gh` CLI / a GitHub Action later if this gets tedious).
+
 ## Reminders and widget
 
 - **Reminders** — Settings → Reminders. On Android these are real scheduled notifications at
@@ -90,8 +106,22 @@ JDK 17, which is why the script hunts for the bundled one.
   Shows the due count and the top three topics; tapping it opens the app. The web layer parks a
   JSON payload in `CapacitorStorage` and pokes the native provider, since a widget cannot run JS.
 
-There is deliberately no calendar or task-list integration — see below for why, and what replaced
-the two attempts that didn't work out.
+- **147 calendar (Android)** — Settings → 147 calendar. Writes the schedule into a **local**
+  calendar (`ACCOUNT_TYPE_LOCAL`, via `CalendarContract`) that is not tied to any Google or
+  Samsung account, so it shows up as its own separate, independently toggleable row in Samsung
+  Calendar's calendar list — hide it with one tap without touching real classes and events. Every
+  sync is a full replace (clear the 147 calendar's events, write the current schedule fresh), so
+  there is nothing to reconcile and nothing can go stale. Needs only the normal Android calendar
+  permission — no account, no OAuth, no internet. `android/.../CalendarPlugin.java`.
+- **Self-update (Android)** — Settings → Updates. Checks the latest GitHub Release, and if it is
+  newer than the running build, downloads the attached APK and hands it to the system installer.
+  Nothing automatic: you press *Check for updates*, then *Install*. Needs the repo to be public
+  (an unauthenticated `fetch` against the GitHub API) and, the first time, the "install unknown
+  apps" toggle for 147 specifically — the app walks you to that screen if it is off.
+  `android/.../UpdaterPlugin.java`, `src/update.ts`. See "Cutting a release" above for how a new
+  version actually reaches this check.
+
+There is deliberately no Google Calendar or Google Tasks integration — see below for why.
 
 ## Cloud sync — no Google sign-in, just a code
 
@@ -150,10 +180,8 @@ to attempt it). Dropping Google sign-in entirely for the anonymous + pairing-cod
 the problem outright — there is no WebView to get blocked in, because there is no OAuth page.
 The one real cost: no more auto-push to a Google Calendar or a Google Tasks list, since both
 require a genuine Google OAuth grant that a six-digit pairing code structurally cannot provide.
-
-A more promising direction, not yet built: Android's system **Calendar Provider**
-(`CalendarContract`), which every calendar app — including Samsung Calendar — reads from. Writing
-events there needs only a native Android permission grant, no Google account and no OAuth at all.
+The local Android calendar above ended up being the better replacement anyway — no account
+needed, and it stays out of your real calendar by construction rather than by discipline.
 
 ## Backup
 
@@ -193,6 +221,11 @@ phone app — there is no sync.
 15. **DONE** — cloud sync rebuilt around anonymous Firebase auth + a random `accountKey` per
     account, paired across devices with a six-digit code instead of any Google sign-in. Fixes the
     phone sign-in failure at the root, since there is no OAuth page left to block.
+16. **DONE** — a local, account-free **147 calendar** on Android via `CalendarContract`, kept
+    deliberately separate from the user's real calendar. Home screen widget resized to a sane
+    default footprint (was defaulting to roughly 3×2 cells).
+17. **DONE** — self-update for the sideloaded APK: checks GitHub Releases, downloads and launches
+    the installer for a newer build. Manual, two button presses, no background polling.
 
 ## Layout
 
@@ -205,6 +238,8 @@ phone app — there is no sync.
 | `src/notify.ts`         | reminders (web + Android) and the widget payload bridge         |
 | `src/backup.ts`         | JSON export/import, native file saving                          |
 | `src/cloud.ts`          | Firebase config, anonymous auth, pairing codes, last-write-wins merge |
+| `src/syscal.ts`         | bridges to the native local Android calendar                    |
+| `src/update.ts`         | GitHub Releases version check + install trigger                 |
 | `src/util.ts`           | local-time date maths, `R147_OFFSETS`, ids, escaping            |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |
@@ -217,6 +252,8 @@ phone app — there is no sync.
 | `scripts/exe.mjs`       | Electron unpack workaround + electron-builder                    |
 | `android/.../BlurtWidget.java` | home screen widget provider                             |
 | `android/.../WidgetPlugin.java` | lets the web app refresh the widget                    |
+| `android/.../CalendarPlugin.java` | the local "147" calendar                              |
+| `android/.../UpdaterPlugin.java` | downloads + launches the installer for a new APK       |
 
 `syncSchedule()` is idempotent — ladder blurts have deterministic ids (`b_<topicId>_r1`), so it
 runs after every mutation, on boot, on tab focus and at midnight without ever duplicating work.
