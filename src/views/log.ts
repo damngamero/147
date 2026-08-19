@@ -25,7 +25,7 @@ interface Draft {
   chapterId: string;
   what: string;
   topicIds: Set<string>;
-  newTopics: string;
+  newTopicNames: string[];
 }
 
 let draft: Draft | null = null;
@@ -42,7 +42,7 @@ function blankDraft(chapterId: string): Draft {
     chapterId: ch?.id ?? (subjectId ? (chaptersOf(subjectId)[0]?.id ?? '') : ''),
     what: '',
     topicIds: new Set(),
-    newTopics: '',
+    newTopicNames: [],
   };
 }
 
@@ -61,7 +61,7 @@ function ensureDraft(route: Route): Draft {
         chapterId: l.chapterId,
         what: l.what,
         topicIds: new Set(l.topicIds),
-        newTopics: '',
+        newTopicNames: [],
       };
       return draft;
     }
@@ -75,6 +75,18 @@ function normalise(d: Draft): void {
   if (d.subjectId && !subjectById(d.subjectId)) d.subjectId = store.subjects[0]?.id ?? '';
   const chapters = d.subjectId ? chaptersOf(d.subjectId) : [];
   if (!chapters.some((c) => c.id === d.chapterId)) d.chapterId = chapters[0]?.id ?? '';
+}
+
+function newTopicChipsHtml(d: Draft): string {
+  return d.newTopicNames
+    .map(
+      (name, i) => `
+      <span class="chip-tag">
+        ${esc(name)}
+        <button type="button" class="chip-x" data-act="rm-new-topic" data-i="${i}" title="Remove">&times;</button>
+      </span>`,
+    )
+    .join('');
 }
 
 function formHtml(d: Draft): string {
@@ -134,8 +146,11 @@ function formHtml(d: Draft): string {
       </div>
 
       <div class="field">
-        <label>New topics — separate them with a comma</label>
-        <input type="text" data-f="newTopics" value="${esc(d.newTopics)}" />
+        <label>New topics</label>
+        <div class="chip-input">
+          <div class="chip-list" data-chips="new-topics">${newTopicChipsHtml(d)}</div>
+          <input type="text" data-f="new-topic-input" placeholder="Type a topic, press Enter to add" />
+        </div>
       </div>
 
       <div class="field">
@@ -208,7 +223,6 @@ export function wire(root: HTMLElement, route: Route): void {
     const f = t.dataset.f;
     if (f === 'date') d.date = t.value;
     if (f === 'what') d.what = t.value;
-    if (f === 'newTopics') d.newTopics = t.value;
     if (t.dataset.topic) {
       const on = (t as HTMLInputElement).checked;
       if (on) d.topicIds.add(t.dataset.topic);
@@ -230,6 +244,40 @@ export function wire(root: HTMLElement, route: Route): void {
       d.topicIds.clear();
       rerender();
     }
+  });
+
+  // Chip-style new-topic adder — updates just the chip list, not a full
+  // rerender, so the input never loses focus while typing several in a row.
+  const newTopicInput = root.querySelector<HTMLInputElement>('[data-f="new-topic-input"]');
+  const chipList = root.querySelector<HTMLElement>('[data-chips="new-topics"]');
+  const syncChips = () => {
+    if (chipList) chipList.innerHTML = newTopicChipsHtml(d);
+  };
+  const addFromInput = () => {
+    if (!newTopicInput) return;
+    const parts = newTopicInput.value
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    for (const name of parts) {
+      if (!d.newTopicNames.some((n) => n.toLowerCase() === name.toLowerCase())) {
+        d.newTopicNames.push(name);
+      }
+    }
+    newTopicInput.value = '';
+    syncChips();
+  };
+  newTopicInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addFromInput();
+    } else if (e.key === 'Backspace' && newTopicInput.value === '' && d.newTopicNames.length) {
+      d.newTopicNames.pop();
+      syncChips();
+    }
+  });
+  newTopicInput?.addEventListener('blur', () => {
+    if (newTopicInput.value.trim()) addFromInput();
   });
 
   onAct(root, async (act, el, ev) => {
@@ -289,6 +337,14 @@ export function wire(root: HTMLElement, route: Route): void {
       return;
     }
 
+    if (act === 'rm-new-topic') {
+      ev.preventDefault();
+      const i = Number(el.dataset.i);
+      d.newTopicNames.splice(i, 1);
+      syncChips();
+      return;
+    }
+
     if (act === 'new-chapter') {
       const name = await askText({ title: 'New chapter', label: 'Name', okLabel: 'Add' });
       if (!name) return;
@@ -298,10 +354,8 @@ export function wire(root: HTMLElement, route: Route): void {
     }
 
     if (act === 'save') {
-      const newTopicNames = d.newTopics
-        .split(/[\n,]/)
-        .map((x) => x.trim())
-        .filter(Boolean);
+      addFromInput();
+      const newTopicNames = d.newTopicNames;
       if (!d.topicIds.size && !newTopicNames.length) {
         const ok = await confirmBox({
           title: 'No topics ticked',

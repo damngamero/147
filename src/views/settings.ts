@@ -9,6 +9,7 @@ import {
   saveConfig,
   startSync,
   sync,
+  syncSoon,
   unlink,
   usingBuiltInConfig,
   type PairingCode,
@@ -367,6 +368,7 @@ export function wire(root: HTMLElement): void {
 
     if (act === 'theme') {
       setTheme(el.dataset.id!);
+      syncSoon();
       rerender();
     }
 

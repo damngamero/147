@@ -1,6 +1,6 @@
 import './styles.css';
 import { setRenderer } from './app';
-import { cloudState, initCloud, sync, syncSoon } from './cloud';
+import { cloudState, initCloud, onCloudChange, sync, syncSoon } from './cloud';
 import { initPullToRefresh } from './pulltorefresh';
 import { onSyscalChange, syscalSoon } from './syscal';
 import { applyTheme } from './theme';
@@ -198,6 +198,7 @@ async function start(): Promise<void> {
   watchDayRollover();
   void refreshNotifications();
   void initCloud(render);
+  onCloudChange(render);
   onSyscalChange(render);
   initPullToRefresh(forceRefresh);
   watchForUpdates();

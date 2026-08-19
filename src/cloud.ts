@@ -81,6 +81,18 @@ export function cloudState(): CloudState {
   return { ...state };
 }
 
+/**
+ * UI hook for cloud-state changes that don't otherwise trigger a render —
+ * background syncs (the debounced auto-sync, the one on launch, pull-to-
+ * refresh) flip state.syncing without any local data changing, so nothing
+ * else calls back into the UI. Without this the sync dot only ever updated
+ * after a sync finished, never while one was running.
+ */
+let onChangeCb: (() => void) | null = null;
+export function onCloudChange(fn: () => void): void {
+  onChangeCb = fn;
+}
+
 /* ---------- config ---------- */
 
 function valid(c: FirebaseConfig | null): FirebaseConfig | null {
@@ -345,6 +357,7 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
 
   state.syncing = true;
   state.error = null;
+  onChangeCb?.();
   try {
     await ensureAnon(ready);
     const { doc, getDoc, setDoc } = await import('firebase/firestore');
@@ -431,6 +444,7 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
     return { ok: false, message };
   } finally {
     state.syncing = false;
+    onChangeCb?.();
   }
 }
 
