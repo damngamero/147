@@ -25,6 +25,7 @@ import type { Firestore } from 'firebase/firestore';
 import * as db from './db';
 import { boot, emit, store } from './state';
 import { syncSchedule } from './schedule';
+import { adoptTheme, currentTheme, themeUpdatedAt } from './theme';
 import type { Tombstone } from './types';
 
 const CONFIG_KEY = '147_firebase_config';
@@ -327,6 +328,14 @@ interface RemoteShape {
   items?: Record_[];
 }
 
+/**
+ * Every read and every write happens in one Promise.all batch each, rather
+ * than one store at a time — with six synced stores plus tombstones and
+ * prefs, going store-by-store meant ~14 sequential network round trips.
+ * Firestore has no cross-document transaction needed here (each store is its
+ * own document, merges happen locally), so there is nothing to lose by firing
+ * them all at once.
+ */
 export async function sync(): Promise<{ ok: boolean; message: string }> {
   const ready = await ensureApp();
   if (!ready) return { ok: false, message: 'Not configured.' };
@@ -340,9 +349,17 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
     await ensureAnon(ready);
     const { doc, getDoc, setDoc } = await import('firebase/firestore');
 
-    // Tombstones first — a delete has to beat any stale copy of the record.
     const tombRef = doc(ready.fs, 'accounts', key, 'data', 'deletes');
-    const tombSnap = await getDoc(tombRef);
+    const prefsRef = doc(ready.fs, 'accounts', key, 'data', 'prefs');
+    const storeRefs = SYNCED.map(({ name }) => doc(ready.fs, 'accounts', key, 'data', name));
+
+    const [tombSnap, prefsSnap, ...storeSnaps] = await Promise.all([
+      getDoc(tombRef),
+      getDoc(prefsRef),
+      ...storeRefs.map((ref) => getDoc(ref)),
+    ]);
+
+    // Tombstones go first — a delete has to beat any stale copy of the record.
     const remoteTombs = ((tombSnap.data() as RemoteShape | undefined)?.items ??
       []) as unknown as Tombstone[];
     const tombs = new Map<string, Tombstone>();
@@ -353,11 +370,11 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
 
     let pulled = 0;
     let pushed = 0;
+    const reads: Promise<unknown>[] = [];
+    const writes: Promise<unknown>[] = [];
 
-    for (const { name, key: idKey } of SYNCED) {
-      const ref = doc(ready.fs, 'accounts', key, 'data', name);
-      const snap = await getDoc(ref);
-      const remote = ((snap.data() as RemoteShape | undefined)?.items ?? []) as Record_[];
+    SYNCED.forEach(({ name, key: idKey }, i) => {
+      const remote = ((storeSnaps[i].data() as RemoteShape | undefined)?.items ?? []) as Record_[];
       const local = store[name] as unknown as Record_[];
 
       const merged = new Map<string, Record_>();
@@ -379,17 +396,29 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
       pushed += items.length;
 
       // Local mirror — touch=false so a pull does not read as a fresh local edit.
-      await db.putMany(name, items, false);
+      reads.push(db.putMany(name, items, false));
       const goneLocally = local
         .map((r) => String(r[idKey]))
         .filter((id) => !merged.has(id));
-      await db.delMany(name, goneLocally, false);
+      reads.push(db.delMany(name, goneLocally, false));
 
-      await setDoc(ref, { items, syncedAt: Date.now() });
+      writes.push(setDoc(storeRefs[i], { items, syncedAt: Date.now() }));
+    });
+
+    // The theme is one value, not a list — merged separately, last-write-wins.
+    const remotePrefs = prefsSnap.data() as { theme?: string; updatedAt?: number } | undefined;
+    const localThemeAt = themeUpdatedAt();
+    let prefsToPush = { theme: currentTheme(), updatedAt: localThemeAt };
+    if (remotePrefs?.theme && (remotePrefs.updatedAt ?? 0) > localThemeAt) {
+      adoptTheme(remotePrefs.theme, remotePrefs.updatedAt ?? Date.now());
+      prefsToPush = { theme: remotePrefs.theme, updatedAt: remotePrefs.updatedAt ?? Date.now() };
     }
+    writes.push(setDoc(prefsRef, prefsToPush));
 
-    await setDoc(tombRef, { items: [...tombs.values()], syncedAt: Date.now() });
-    await db.putMany('deletes', [...tombs.values()], false);
+    writes.push(setDoc(tombRef, { items: [...tombs.values()], syncedAt: Date.now() }));
+    reads.push(db.putMany('deletes', [...tombs.values()], false));
+
+    await Promise.all([...reads, ...writes]);
 
     await boot();
     await syncSchedule();

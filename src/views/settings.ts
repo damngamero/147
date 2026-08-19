@@ -8,6 +8,7 @@ import {
   redeemPairingCode,
   saveConfig,
   startSync,
+  sync,
   unlink,
   usingBuiltInConfig,
   type PairingCode,
@@ -209,7 +210,7 @@ function syscalCard(): string {
     </div>`;
 }
 
-/* ---------- updates (Android sideload only) ---------- */
+/* ---------- updates ---------- */
 
 function updateCard(): string {
   const busy = updateState === 'checking' || updateState === 'installing';
@@ -220,8 +221,9 @@ function updateCard(): string {
         <span class="grow">
           <div class="title">147 version ${esc(APP_VERSION)}</div>
           <div class="sub">
-            There is no app store here, so 147 checks GitHub directly. Nothing happens
-            automatically — you decide when to check and when to install.
+            There is no app store here, so 147 checks GitHub directly, on launch and every few
+            hours in the background. If it finds something you get a Restart now / Later banner —
+            this card is only for checking by hand.
           </div>
         </span>
       </div>
@@ -258,6 +260,7 @@ function updateCard(): string {
 
 export function render(): string {
   return `
+    <a class="back-link" href="#" data-act="back">&lsaquo; Back</a>
     <h1>Settings</h1>
 
     <h2>Appearance</h2>
@@ -354,7 +357,14 @@ export function wire(root: HTMLElement): void {
     file.value = '';
   });
 
-  onAct(root, async (act, el) => {
+  onAct(root, async (act, el, ev) => {
+    if (act === 'back') {
+      ev.preventDefault();
+      if (history.length > 1) history.back();
+      else location.hash = '#/today';
+      return;
+    }
+
     if (act === 'theme') {
       setTheme(el.dataset.id!);
       rerender();
@@ -474,6 +484,22 @@ export function wire(root: HTMLElement): void {
     }
 
     if (act === 'update-install' && updateInfo) {
+      const backupFirst = await confirmBox({
+        title: 'Back up before updating?',
+        body: 'Updating never touches your data, but exporting a backup first is one tap of insurance.',
+        okLabel: 'Back up, then update',
+      });
+      if (backupFirst) {
+        await saveFile(
+          `147-backup-${stamp()}.json`,
+          'application/json',
+          JSON.stringify(buildBackup(), null, 2),
+        );
+        toast('Backup saved');
+      }
+
+      if (cloudState().linked) await sync().catch(() => undefined);
+
       const allowed = await canInstallUpdates();
       if (!allowed) {
         const grant = await confirmBox({

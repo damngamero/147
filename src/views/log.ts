@@ -5,6 +5,7 @@ import {
   chapterById,
   chaptersOf,
   deleteClassLog,
+  deleteTopic,
   logById,
   recentLogs,
   saveClassLog,
@@ -12,6 +13,7 @@ import {
   subjectById,
   topicById,
   topicsOf,
+  updateTopic,
 } from '../state';
 import { askText, confirmBox, onAct, toast } from '../ui';
 import { esc, fmtDate, todayISO } from '../util';
@@ -90,11 +92,15 @@ function formHtml(d: Draft): string {
   const checks = topics
     .map(
       (t) => `
-      <label class="check ${d.topicIds.has(t.id) ? 'on' : ''}">
-        <input type="checkbox" data-topic="${t.id}" ${d.topicIds.has(t.id) ? 'checked' : ''} />
-        <span class="grow">${esc(t.name)}</span>
-        ${t.isLast ? '<span class="pill last">last</span>' : ''}
-      </label>`,
+      <div class="check-row">
+        <label class="check ${d.topicIds.has(t.id) ? 'on' : ''}">
+          <input type="checkbox" data-topic="${t.id}" ${d.topicIds.has(t.id) ? 'checked' : ''} />
+          <span class="grow">${esc(t.name)}</span>
+          ${t.isLast ? '<span class="pill last">last</span>' : ''}
+        </label>
+        <button type="button" class="icon-btn" data-act="rename-topic" data-id="${t.id}" title="Rename topic">&#9662;</button>
+        <button type="button" class="icon-btn danger" data-act="del-topic" data-id="${t.id}" title="Delete topic">&times;</button>
+      </div>`,
     )
     .join('');
 
@@ -246,6 +252,39 @@ export function wire(root: HTMLElement, route: Route): void {
         }
         await deleteClassLog(id);
         toast('Class unlogged');
+      }
+      return;
+    }
+
+    if (act === 'rename-topic') {
+      ev.preventDefault();
+      const tid = el.dataset.id!;
+      const t = topicById(tid);
+      if (!t) return;
+      const name = await askText({ title: 'Rename topic', label: 'Name', value: t.name, okLabel: 'Save' });
+      if (name) {
+        await updateTopic(tid, { name });
+        rerender();
+      }
+      return;
+    }
+
+    if (act === 'del-topic') {
+      ev.preventDefault();
+      const tid = el.dataset.id!;
+      const t = topicById(tid);
+      if (!t) return;
+      const yes = await confirmBox({
+        title: `Delete ${t.name}?`,
+        body: 'Its blurts go too, and it comes off any class it was ticked on.',
+        okLabel: 'Delete',
+        danger: true,
+      });
+      if (yes) {
+        d.topicIds.delete(tid);
+        await deleteTopic(tid);
+        toast('Topic deleted');
+        rerender();
       }
       return;
     }

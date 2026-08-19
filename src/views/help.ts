@@ -16,6 +16,7 @@ export function render(): string {
     </table>`;
 
   return `
+    <a class="back-link" href="#" data-act="back">&lsaquo; Back</a>
     <h1>How 147 works</h1>
 
     <div class="card">
@@ -147,7 +148,8 @@ service cloud.firestore {
       the next time the other one syncs.</p>
       <p>Sync runs on launch and a few seconds after any change. There is no manual sync button
       because there is nothing to press — logging a class or clearing a blurt is what triggers
-      it.</p>
+      it. Reads and writes fire in parallel batches rather than one at a time, so a full sync is
+      usually a couple of seconds, not longer.</p>
     </div>
 
     <h2>The 147 calendar — kept separate from your real one</h2>
@@ -173,11 +175,19 @@ service cloud.firestore {
       shows the due count and the next few topics; tapping it opens the app.</p>
       <p><b>Backup</b> — Settings → Export JSON. Worth doing before a reinstall even with cloud sync
       switched on.</p>
+      <p><b>Updates</b> — checked automatically on launch and every few hours in the background;
+      a <b>Restart now / Later</b> banner shows up when one is found. The desktop build restarts
+      itself silently; the Android build hands off to the system installer.</p>
     </div>`;
 }
 
 export function wire(root: HTMLElement): void {
-  onAct(root, (act) => {
+  onAct(root, (act, _el, ev) => {
     if (act === 'tour') startTour();
+    if (act === 'back') {
+      ev.preventDefault();
+      if (history.length > 1) history.back();
+      else location.hash = '#/today';
+    }
   });
 }
