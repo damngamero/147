@@ -1,6 +1,7 @@
 import './styles.css';
 import { setRenderer } from './app';
 import { initCloud, syncSoon } from './cloud';
+import { onSyscalChange, syscalSoon } from './syscal';
 import { applyTheme } from './theme';
 import { parseHash, type Route } from './router';
 import { dueBy, syncSchedule } from './schedule';
@@ -114,7 +115,10 @@ function syncThenRender(): void {
   syncing = true;
   void syncSchedule()
     .then(() => refreshNotifications())
-    .then(() => syncSoon())
+    .then(() => {
+      syncSoon();
+      syscalSoon();
+    })
     .finally(() => {
       syncing = false;
     });
@@ -148,6 +152,7 @@ async function start(): Promise<void> {
   watchDayRollover();
   void refreshNotifications();
   void initCloud(render);
+  onSyscalChange(render);
   maybeStartTour();
 }
 
