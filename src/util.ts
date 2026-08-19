@@ -1,0 +1,68 @@
+import type { ISODate } from './types';
+
+export function uid(prefix = ''): string {
+  return prefix + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+
+/** Local-time yyyy-mm-dd (never UTC — a class logged at 11pm must stay on today). */
+export function toISO(d: Date): ISODate {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function todayISO(): ISODate {
+  return toISO(new Date());
+}
+
+export function fromISO(iso: ISODate): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function addDays(iso: ISODate, n: number): ISODate {
+  const d = fromISO(iso);
+  d.setDate(d.getDate() + n);
+  return toISO(d);
+}
+
+export function daysBetween(a: ISODate, b: ISODate): number {
+  return Math.round((fromISO(b).getTime() - fromISO(a).getTime()) / 86400000);
+}
+
+const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function fmtDate(iso: ISODate): string {
+  const d = fromISO(iso);
+  return `${WD[d.getDay()]} ${d.getDate()} ${MO[d.getMonth()]}`;
+}
+
+export function relDay(iso: ISODate): string {
+  const n = daysBetween(todayISO(), iso);
+  if (n === 0) return 'today';
+  if (n === 1) return 'tomorrow';
+  if (n === -1) return 'yesterday';
+  if (n < 0) return `${-n}d ago`;
+  return `in ${n}d`;
+}
+
+/**
+ * The 1-4-7 ladder, as cumulative offsets from the class date.
+ * Class on the 14th -> blurt 1 on the 15th (+1), blurt 2 on the 19th (+1+4),
+ * blurt 3 on the 26th (+1+4+7).
+ */
+export const R147_OFFSETS = { r1: 1, r4: 5, r7: 12 } as const;
+export const WEEKLY_GAP = 7;
+export const FORTNIGHTLY_GAP = 14;
+
+export function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+  );
+}
+
+export const PALETTE = [
+  '#7c9cff', '#5ecfa8', '#f2a65a', '#e8c05a', '#c07cff', '#57c7e8', '#f2778c',
+];
