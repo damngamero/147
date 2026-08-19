@@ -130,13 +130,14 @@ service cloud.firestore {
 
     <h2>Adding a second device</h2>
     <div class="card guide-body">
-      <p>On the device that is already synced: <b>Settings → Cloud sync → Get a pairing code</b>.
-      That shows a six-digit code, valid for ten minutes.</p>
-      <p>On the new device: <b>Settings → Cloud sync → Have a pairing code?</b>, type the six
-      digits in. It adopts the same account and syncs immediately — pulling in everything from
-      the first device, pushing up anything only the new device had.</p>
-      <p class="muted small">The code itself is worthless once redeemed or expired. If you miss
-      the window, just generate a fresh one.</p>
+      <p>The device that is already synced shows a permanent six-digit <b>sync token</b> right
+      there in <b>Settings → Cloud sync</b> — no button to press, it just appears.</p>
+      <p>On the new device: <b>Settings → Cloud sync → Have a sync token?</b>, type the six digits
+      in. It adopts the same account and syncs immediately — pulling in everything from the first
+      device, pushing up anything only the new device had.</p>
+      <p class="muted small">The token never expires, so there is no rush and nothing to
+      regenerate for a normal link-up. <b>Regenerate token</b> exists for if the token ever leaks
+      — it replaces it outright, and the old one stops working immediately.</p>
     </div>
 
     <h2>How sync resolves clashes</h2>

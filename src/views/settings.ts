@@ -3,15 +3,15 @@ import { buildBackup, restoreBackup, saveFile, stamp } from '../backup';
 import {
   cloudState,
   clearConfig,
-  createPairingCode,
+  getSyncToken,
   readConfig,
-  redeemPairingCode,
+  redeemSyncToken,
+  regenerateSyncToken,
   saveConfig,
   startSync,
   sync,
   unlink,
   usingBuiltInConfig,
-  type PairingCode,
 } from '../cloud';
 import { enableNotifications, notificationState } from '../notify';
 import { store } from '../state';
@@ -38,8 +38,9 @@ import {
 import { askText, confirmBox, onAct, toast } from '../ui';
 import { esc } from '../util';
 
-/** The most recently generated pairing code, shown until replaced or navigated away from. */
-let pairing: PairingCode | null = null;
+/** The account's permanent sync token, lazily loaded once per Settings visit. */
+let syncToken: string | null = null;
+let syncTokenLoading = false;
 
 /** null = not checked yet. Checked once per Settings visit, native side only. */
 let syscalPermission: boolean | null = null;
@@ -56,11 +57,6 @@ function ago(ts: number | null): string {
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.round(mins / 60);
   return hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
-}
-
-function inMinutes(ts: number): string {
-  const mins = Math.round((ts - Date.now()) / 60000);
-  return mins <= 0 ? 'expired' : `${mins}m`;
 }
 
 /* ---------- appearance ---------- */
@@ -111,11 +107,11 @@ function cloudCard(): string {
         </p>
         <div class="actions">
           <button class="btn primary" data-act="cloud-start">Turn on sync</button>
-          <button class="btn" data-act="cloud-redeem">Have a pairing code?</button>
+          <button class="btn" data-act="cloud-redeem">Have a sync token?</button>
         </div>
         <p class="muted small" style="margin-top:10px">
           <b>Turn on sync</b> if this is the first device — everything here becomes the seed.
-          <b>Have a pairing code?</b> if another device already generated one for you.
+          <b>Have a sync token?</b> if another device already has one to give you.
         </p>
         <div class="actions" style="margin-top:12px">
           <button class="btn ghost danger" data-act="cloud-forget">Disconnect Firebase</button>
@@ -135,22 +131,21 @@ function cloudCard(): string {
       </div>
 
       <div class="actions" style="margin-top:12px">
-        <button class="btn primary" data-act="cloud-pair">Get a pairing code</button>
         <span class="spacer"></span>
         <button class="btn ghost danger" data-act="cloud-unlink">Unlink this device</button>
       </div>
 
-      ${
-        pairing
-          ? `<div class="pairing-code">
-              <div class="pairing-digits">${esc(pairing.code)}</div>
-              <div class="dim small">
-                Enter this on the other device, under Settings → Cloud sync → Have a pairing
-                code? Expires in ${inMinutes(pairing.expiresAt)}.
-              </div>
-            </div>`
-          : ''
-      }
+      <div class="pairing-code">
+        <div class="pairing-digits">${syncToken ? esc(syncToken) : syncTokenLoading ? '······' : '——————'}</div>
+        <div class="dim small">
+          Your permanent sync token. Enter it on any other device under Settings → Cloud sync →
+          Have a sync token? — it never expires, so there's no rush and no regenerating it each
+          time.
+        </div>
+      </div>
+      <div class="actions" style="margin-top:10px">
+        <button class="btn ghost danger sm" data-act="regen-token" ${syncToken ? '' : 'disabled'}>Regenerate token</button>
+      </div>
 
       ${c.error ? `<p class="small" style="color:var(--bad);margin-top:10px">${esc(c.error)}</p>` : ''}
     </div>`;
@@ -338,6 +333,15 @@ export function wire(root: HTMLElement): void {
     });
   }
 
+  if (cloudState().linked && !syncToken && !syncTokenLoading) {
+    syncTokenLoading = true;
+    void getSyncToken().then((res) => {
+      syncTokenLoading = false;
+      if (res.ok) syncToken = res.code;
+      rerender();
+    });
+  }
+
   const file = root.querySelector<HTMLInputElement>('[data-f="file"]');
   file?.addEventListener('change', async () => {
     const f = file.files?.[0];
@@ -393,7 +397,7 @@ export function wire(root: HTMLElement): void {
       });
       if (yes) {
         clearConfig();
-        pairing = null;
+        syncToken = null;
         rerender();
       }
     }
@@ -406,20 +410,28 @@ export function wire(root: HTMLElement): void {
 
     if (act === 'cloud-redeem') {
       const code = await askText({
-        title: 'Enter the pairing code',
-        label: 'The 6-digit code shown on your other device',
+        title: 'Enter the sync token',
+        label: 'The 6-digit token shown on your other device',
         okLabel: 'Link',
       });
       if (!code) return;
-      const res = await redeemPairingCode(code);
+      const res = await redeemSyncToken(code);
       toast(res.message);
       rerender();
     }
 
-    if (act === 'cloud-pair') {
-      const res = await createPairingCode();
+    if (act === 'regen-token') {
+      const yes = await confirmBox({
+        title: 'Regenerate your sync token?',
+        body: 'Are you sure? The old token stops working the moment you do this — any device that hasn’t linked with it yet will need the new one instead.',
+        okLabel: 'Regenerate',
+        danger: true,
+      });
+      if (!yes) return;
+      const res = await regenerateSyncToken();
       if (res.ok) {
-        pairing = res.pairing;
+        syncToken = res.code;
+        toast('Token regenerated');
       } else {
         toast(res.message);
       }
@@ -429,13 +441,13 @@ export function wire(root: HTMLElement): void {
     if (act === 'cloud-unlink') {
       const yes = await confirmBox({
         title: 'Unlink this device?',
-        body: 'Local data stays put. This device stops syncing until you turn it on again or redeem a fresh pairing code.',
+        body: 'Local data stays put. This device stops syncing until you turn it on again or redeem your sync token.',
         okLabel: 'Unlink',
         danger: true,
       });
       if (yes) {
         unlink();
-        pairing = null;
+        syncToken = null;
         rerender();
       }
     }

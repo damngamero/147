@@ -10,10 +10,10 @@
  * Data is partitioned by a random `accountKey` generated locally on the first
  * device, not by the Firebase uid (every anonymous session gets its own,
  * unrelated uid — there is no way to make two anonymous sessions share one
- * without a server). To add a second device, the first one mints a six-digit
- * pairing code that maps to its accountKey in Firestore for ten minutes; the
- * second device reads that mapping once and adopts the same accountKey.
- * After that, both devices just sync straight to `accounts/{accountKey}/...`.
+ * without a server). To add a second device, the first one has a permanent
+ * six-digit sync token that maps to its accountKey in Firestore; the second
+ * device reads that mapping once and adopts the same accountKey. After that,
+ * both devices just sync straight to `accounts/{accountKey}/...`.
  *
  * Merge strategy is last-write-wins per record on `updatedAt`, with tombstones
  * so a delete on one device does not get resurrected by the other.
@@ -29,7 +29,6 @@ import type { Tombstone } from './types';
 
 const CONFIG_KEY = '147_firebase_config';
 const ACCOUNT_KEY = '147_account_key';
-const PAIR_TTL_MS = 10 * 60 * 1000;
 
 /** Stores that take part in sync, and the field each is keyed by. */
 const SYNCED = [
@@ -255,7 +254,7 @@ export async function startSync(): Promise<{ ok: boolean; message: string }> {
   setAccountKey(randomHex(16));
   const res = await sync();
   return res.ok
-    ? { ok: true, message: 'Sync is on. Get a pairing code to add another device.' }
+    ? { ok: true, message: 'Sync is on. Your sync token is in this card — use it on another device.' }
     : res;
 }
 
@@ -265,18 +264,14 @@ export function unlink(): void {
   state.linked = false;
 }
 
-export interface PairingCode {
-  code: string;
-  expiresAt: number;
-}
-
 /**
- * Mints a six-digit code that resolves to this device's accountKey for ten
- * minutes, so a second device can adopt it. The code itself grants nothing
- * lasting — once redeemed (or once it expires) it is worthless.
+ * A permanent six-digit token, one per account, that resolves to this
+ * account's accountKey — unlike the old pairing code, it never expires, so
+ * it only needs generating once and can be reused on any future device.
+ * Regenerating replaces it outright (see regenerateSyncToken).
  */
-export async function createPairingCode(): Promise<
-  { ok: true; pairing: PairingCode } | { ok: false; message: string }
+export async function getSyncToken(): Promise<
+  { ok: true; code: string } | { ok: false; message: string }
 > {
   const key = accountKey();
   if (!key) return { ok: false, message: 'Turn sync on first.' };
@@ -285,38 +280,68 @@ export async function createPairingCode(): Promise<
 
   try {
     await ensureAnon(ready);
-    const { doc, setDoc } = await import('firebase/firestore');
+    const { doc, getDoc, setDoc } = await import('firebase/firestore');
+    const tokenRef = doc(ready.fs, 'accounts', key, 'data', 'token');
+    const snap = await getDoc(tokenRef);
+    const existing = (snap.data() as { code?: string } | undefined)?.code;
+    if (existing) return { ok: true, code: existing };
+
     const code = randomDigits(6);
-    const expiresAt = Date.now() + PAIR_TTL_MS;
-    await setDoc(doc(ready.fs, 'pairs', code), { accountKey: key, expiresAt });
-    return { ok: true, pairing: { code, expiresAt } };
+    await Promise.all([
+      setDoc(doc(ready.fs, 'pairs', code), { accountKey: key }),
+      setDoc(tokenRef, { code }),
+    ]);
+    return { ok: true, code };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Replaces the token outright — the old one stops resolving immediately. */
+export async function regenerateSyncToken(): Promise<
+  { ok: true; code: string } | { ok: false; message: string }
+> {
+  const key = accountKey();
+  if (!key) return { ok: false, message: 'Turn sync on first.' };
+  const ready = await ensureApp();
+  if (!ready) return { ok: false, message: 'Not configured.' };
+
+  try {
+    await ensureAnon(ready);
+    const { doc, getDoc, setDoc, deleteDoc } = await import('firebase/firestore');
+    const tokenRef = doc(ready.fs, 'accounts', key, 'data', 'token');
+    const snap = await getDoc(tokenRef);
+    const oldCode = (snap.data() as { code?: string } | undefined)?.code;
+
+    const code = randomDigits(6);
+    await Promise.all([
+      setDoc(doc(ready.fs, 'pairs', code), { accountKey: key }),
+      setDoc(tokenRef, { code }),
+      oldCode ? deleteDoc(doc(ready.fs, 'pairs', oldCode)) : Promise.resolve(),
+    ]);
+    return { ok: true, code };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
 }
 
 /**
- * Second device: reads the code, adopts whatever accountKey it points at,
+ * Second device: reads the token, adopts whatever accountKey it points at,
  * then syncs — which pulls in everything already on the account and pushes
  * up anything only this device had.
  */
-export async function redeemPairingCode(
-  code: string,
-): Promise<{ ok: boolean; message: string }> {
+export async function redeemSyncToken(code: string): Promise<{ ok: boolean; message: string }> {
   const ready = await ensureApp();
   if (!ready) return { ok: false, message: 'Add your Firebase config first.' };
   const digits = code.trim();
-  if (!/^\d{6}$/.test(digits)) return { ok: false, message: 'That is not a six-digit code.' };
+  if (!/^\d{6}$/.test(digits)) return { ok: false, message: 'That is not a six-digit token.' };
 
   try {
     await ensureAnon(ready);
     const { doc, getDoc } = await import('firebase/firestore');
     const snap = await getDoc(doc(ready.fs, 'pairs', digits));
-    const data = snap.data() as { accountKey?: string; expiresAt?: number } | undefined;
-    if (!data?.accountKey) return { ok: false, message: 'No such code — check the digits.' };
-    if (!data.expiresAt || data.expiresAt < Date.now()) {
-      return { ok: false, message: 'That code has expired — get a fresh one from the other device.' };
-    }
+    const data = snap.data() as { accountKey?: string } | undefined;
+    if (!data?.accountKey) return { ok: false, message: 'No such token — check the digits.' };
     setAccountKey(data.accountKey);
     const res = await sync();
     return res.ok ? { ok: true, message: 'Linked. Everything from the other device is here.' } : res;

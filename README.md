@@ -155,12 +155,14 @@ service cloud.firestore {
 The config is stored in `localStorage`, not compiled in, so the same `.exe`/`.apk` works against
 any project without a rebuild — `VITE_FIREBASE_CONFIG` at build time is just the default.
 
-**Adding a second device** — on the first (already-synced) device, **Get a pairing code**: a
-six-digit code that maps to that device's `accountKey` in Firestore for ten minutes. On the second
-device, **Have a pairing code?**, type the six digits, and it adopts the same `accountKey` and
-syncs — pulling in everything from the first device, pushing up anything only it had. The code
-itself is worthless once redeemed or expired; the real secret is the `accountKey`, which is never
-shown on screen.
+**Adding a second device** — the first (already-synced) device shows a permanent six-digit
+**sync token** right in Settings → Cloud sync, mapping to that device's `accountKey` in Firestore.
+It never expires — generated once per account, reused for every future device. On the second
+device, **Have a sync token?**, type the six digits, and it adopts the same `accountKey` and
+syncs — pulling in everything from the first device, pushing up anything only it had.
+**Regenerate token** replaces it outright if it ever leaks; the old one stops resolving
+immediately. The real secret is still the `accountKey`, which is never shown on screen — the
+token is just a lookup for it.
 
 **Merge model** — last-write-wins per record on `updatedAt`, which `db.put` stamps on every
 write. Deletes leave a tombstone in the `deletes` store so they survive a sync instead of being
@@ -176,10 +178,10 @@ embedded WebView (the "This browser or app may not be secure" wall) — which is
 Capacitor Android app is, so real Google sign-in never worked reliably on the phone build no
 matter which flow was tried (popup, redirect, or the native Google Sign-In plugin, which needs a
 registered Android app + SHA-1 fingerprint + `google-services.json` in the Firebase project just
-to attempt it). Dropping Google sign-in entirely for the anonymous + pairing-code model sidesteps
+to attempt it). Dropping Google sign-in entirely for the anonymous + sync-token model sidesteps
 the problem outright — there is no WebView to get blocked in, because there is no OAuth page.
 The one real cost: no more auto-push to a Google Calendar or a Google Tasks list, since both
-require a genuine Google OAuth grant that a six-digit pairing code structurally cannot provide.
+require a genuine Google OAuth grant that a six-digit sync token structurally cannot provide.
 The local Android calendar above ended up being the better replacement anyway — no account
 needed, and it stays out of your real calendar by construction rather than by discipline.
 
@@ -226,6 +228,10 @@ phone app — there is no sync.
     default footprint (was defaulting to roughly 3×2 cells).
 17. **DONE** — self-update for the sideloaded APK: checks GitHub Releases, downloads and launches
     the installer for a newer build. Manual, two button presses, no background polling.
+18. **DONE** — desktop self-update (silent install + relaunch), Restart now/Later banner on both
+    platforms, parallelized sync, pull-to-refresh, live sync-status dot, chip-style topic adder
+    with inline rename/delete, and a permanent regenerable sync token replacing the old 10-minute
+    pairing code.
 
 ## Layout
 
@@ -237,9 +243,11 @@ phone app — there is no sync.
 | `src/schedule.ts`       | **the 1-4-7 / weekly / fortnightly engine** — `syncSchedule()`  |
 | `src/notify.ts`         | reminders (web + Android) and the widget payload bridge         |
 | `src/backup.ts`         | JSON export/import, native file saving                          |
-| `src/cloud.ts`          | Firebase config, anonymous auth, pairing codes, last-write-wins merge |
+| `src/cloud.ts`          | Firebase config, anonymous auth, permanent sync token, last-write-wins merge |
 | `src/syscal.ts`         | bridges to the native local Android calendar                    |
 | `src/update.ts`         | GitHub Releases version check + install trigger                 |
+| `src/updateBanner.ts`   | Restart now/Later banner, checked in the background              |
+| `src/pulltorefresh.ts`  | pull-to-refresh gesture                                          |
 | `src/util.ts`           | local-time date maths, `R147_OFFSETS`, ids, escaping            |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |
@@ -247,7 +255,8 @@ phone app — there is no sync.
 | `src/theme.ts`          | the four themes and how they are applied                          |
 | `src/tour.ts`           | first-run walkthrough overlay                                    |
 | `src/main.ts`           | shell, tabs, render loop, day rollover                          |
-| `electron/main.cjs`     | desktop window                                                  |
+| `electron/main.cjs`     | desktop window + IPC handlers for self-update                   |
+| `electron/preload.cjs`  | exposes window.desktopUpdater to the renderer                   |
 | `scripts/apk.mjs`       | SDK/JDK detection + gradle build + APK copy                     |
 | `scripts/exe.mjs`       | Electron unpack workaround + electron-builder                    |
 | `android/.../BlurtWidget.java` | home screen widget provider                             |
