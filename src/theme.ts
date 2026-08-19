@@ -1,7 +1,6 @@
 /** Theme names map to the [data-theme] blocks in styles.css. */
 
 const KEY = '147_theme';
-const UPDATED_KEY = '147_theme_updated_at';
 
 export interface Theme {
   id: string;
@@ -55,24 +54,7 @@ export function applyTheme(id: string = currentTheme()): void {
   if (meta && bg) meta.setAttribute('content', bg);
 }
 
-export function themeUpdatedAt(): number {
-  return Number(localStorage.getItem(UPDATED_KEY) ?? 0);
-}
-
 export function setTheme(id: string): void {
   localStorage.setItem(KEY, id);
-  localStorage.setItem(UPDATED_KEY, String(Date.now()));
-  applyTheme(id);
-}
-
-/**
- * Used by cloud sync to adopt a theme pulled from another device. Deliberately
- * does not bump the update clock to now() — it keeps the remote timestamp, so
- * the same value doesn't get pushed straight back as if it were a fresh edit.
- */
-export function adoptTheme(id: string, updatedAt: number): void {
-  if (!THEMES.some((t) => t.id === id)) return;
-  localStorage.setItem(KEY, id);
-  localStorage.setItem(UPDATED_KEY, String(updatedAt));
   applyTheme(id);
 }

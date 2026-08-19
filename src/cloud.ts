@@ -25,7 +25,6 @@ import type { Firestore } from 'firebase/firestore';
 import * as db from './db';
 import { boot, emit, store } from './state';
 import { syncSchedule } from './schedule';
-import { adoptTheme, currentTheme, themeUpdatedAt } from './theme';
 import type { Tombstone } from './types';
 
 const CONFIG_KEY = '147_firebase_config';
@@ -342,11 +341,11 @@ interface RemoteShape {
 
 /**
  * Every read and every write happens in one Promise.all batch each, rather
- * than one store at a time — with six synced stores plus tombstones and
- * prefs, going store-by-store meant ~14 sequential network round trips.
- * Firestore has no cross-document transaction needed here (each store is its
- * own document, merges happen locally), so there is nothing to lose by firing
- * them all at once.
+ * than one store at a time — with six synced stores plus tombstones, going
+ * store-by-store meant ~12 sequential network round trips. Firestore has no
+ * cross-document transaction needed here (each store is its own document,
+ * merges happen locally), so there is nothing to lose by firing them all at
+ * once.
  */
 export async function sync(): Promise<{ ok: boolean; message: string }> {
   const ready = await ensureApp();
@@ -363,12 +362,10 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
     const { doc, getDoc, setDoc } = await import('firebase/firestore');
 
     const tombRef = doc(ready.fs, 'accounts', key, 'data', 'deletes');
-    const prefsRef = doc(ready.fs, 'accounts', key, 'data', 'prefs');
     const storeRefs = SYNCED.map(({ name }) => doc(ready.fs, 'accounts', key, 'data', name));
 
-    const [tombSnap, prefsSnap, ...storeSnaps] = await Promise.all([
+    const [tombSnap, ...storeSnaps] = await Promise.all([
       getDoc(tombRef),
-      getDoc(prefsRef),
       ...storeRefs.map((ref) => getDoc(ref)),
     ]);
 
@@ -417,16 +414,6 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
 
       writes.push(setDoc(storeRefs[i], { items, syncedAt: Date.now() }));
     });
-
-    // The theme is one value, not a list — merged separately, last-write-wins.
-    const remotePrefs = prefsSnap.data() as { theme?: string; updatedAt?: number } | undefined;
-    const localThemeAt = themeUpdatedAt();
-    let prefsToPush = { theme: currentTheme(), updatedAt: localThemeAt };
-    if (remotePrefs?.theme && (remotePrefs.updatedAt ?? 0) > localThemeAt) {
-      adoptTheme(remotePrefs.theme, remotePrefs.updatedAt ?? Date.now());
-      prefsToPush = { theme: remotePrefs.theme, updatedAt: remotePrefs.updatedAt ?? Date.now() };
-    }
-    writes.push(setDoc(prefsRef, prefsToPush));
 
     writes.push(setDoc(tombRef, { items: [...tombs.values()], syncedAt: Date.now() }));
     reads.push(db.putMany('deletes', [...tombs.values()], false));

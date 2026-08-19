@@ -1,7 +1,7 @@
 {
   "name": "app147",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "Class log with an automatic 1-4-7 blurt schedule",
