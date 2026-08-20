@@ -49,11 +49,13 @@ export function relDay(iso: ISODate): string {
 }
 
 /**
- * The 1-4-7 ladder, as cumulative offsets from the class date.
- * Class on the 14th -> blurt 1 on the 15th (+1), blurt 2 on the 19th (+1+4),
- * blurt 3 on the 26th (+1+4+7).
+ * The 1-4-7 ladder, as gaps chained off the PREVIOUS step's actual resolution —
+ * not fixed offsets from the class date. Blurt 1 is +1 day from the class;
+ * blurt 2 is +4 days from whenever blurt 1 actually got done (late or not);
+ * blurt 3 is +7 days from whenever blurt 2 actually got done. Doing a step
+ * late slides everything after it, which is the whole point of chaining.
  */
-export const R147_OFFSETS = { r1: 1, r4: 5, r7: 12 } as const;
+export const R147_GAPS = { r1: 1, r4: 4, r7: 7 } as const;
 export const WEEKLY_GAP = 7;
 export const FORTNIGHTLY_GAP = 14;
 

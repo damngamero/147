@@ -21,6 +21,7 @@ import {
   type DeviceInfo,
 } from '../cloud';
 import { enableNotifications, notificationState } from '../notify';
+import { refreshLadders } from '../schedule';
 import { store } from '../state';
 import {
   pushSyscal,
@@ -349,6 +350,18 @@ export function render(): string {
       </div>
     </div>
 
+    <h2>Schedule</h2>
+    <div class="card">
+      <p class="muted small">
+        Rebuilds every not-yet-done blurt 2 and blurt 3 from scratch, in case a scheduling fix
+        needs to reach classes that were already logged. Anything already done or skipped is left
+        alone — this can't lose history.
+      </p>
+      <div class="actions">
+        <button class="btn ghost" data-act="refresh-ladders">Refresh blurt schedule</button>
+      </div>
+    </div>
+
     <h2>Help</h2>
     <div class="card">
       <div class="actions">
@@ -653,6 +666,12 @@ export function wire(root: HTMLElement): void {
     }
 
     if (act === 'import') root.querySelector<HTMLInputElement>('[data-f="file"]')?.click();
+
+    if (act === 'refresh-ladders') {
+      await refreshLadders();
+      toast('Schedule refreshed');
+      rerender();
+    }
 
     if (act === 'tour') startTour();
   });

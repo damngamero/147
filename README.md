@@ -22,13 +22,17 @@ instructions and labels, the 1-4-7 schedule is identical either way.
 **A blurt covers a whole class**, not a single topic. Every topic taught in one class comes up
 together, on the same day. You blurt on paper; the app only asks how each topic went, 1-5.
 
-**1-4-7 ladder** — one ladder per class, offsets counted from the date it happened:
+**1-4-7 ladder** — one ladder per class, chained off the *actual* completion of the previous
+blurt rather than fixed to the class date. Blurt 1 is +1 day from the class; blurt 2 is +4 days
+from whenever blurt 1 actually got done; blurt 3 is +7 days from whenever blurt 2 actually got
+done. Doing a blurt late slides everything after it — that is the point of chaining instead of
+three independent deadlines.
 
-| Blurt | Gap | Offset from class | Example (class on the 14th) |
-| ----- | --- | ----------------- | --------------------------- |
-| 1     | +1  | +1 day            | 15th                        |
-| 2     | +4  | +5 days           | 19th                        |
-| 3     | +7  | +12 days          | 26th                        |
+| Blurt | Gap from | Example (class on the 14th, everything done on time) |
+| ----- | -------- | ------------------------------------------------------ |
+| 1     | +1 day from the class                | 15th |
+| 2     | +4 days from blurt 1's completion    | 19th |
+| 3     | +7 days from blurt 2's completion    | 26th |
 
 **After the ladder** — a class that has cleared all three goes onto a **weekly** blurt, anchored
 to the day the last one was actually done.
@@ -55,8 +59,9 @@ Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 npm run exe
 ```
 
-Writes `release/147 Setup <version>.exe` (installer) and `release/147 <version>.exe` (portable),
-version taken straight from `package.json`.
+Writes `release/147 Setup <version>.exe`, version taken straight from `package.json`. Installer
+only — no portable build, since a portable copy sitting around never gets touched by self-update
+and just causes confusion about which one is "the real app."
 
 electron-builder normally unzips Electron to `win-unpacked.tmp` and renames that folder; on this
 machine the rename fails with `EPERM` every time (something holds a handle on the freshly
@@ -91,8 +96,9 @@ phones once it is actually published there:
    `versionName` in `android/app/build.gradle` (bump `versionCode` too, it just counts up).
 2. `npm run apk` and `npm run exe`.
 3. On GitHub: **Releases → Draft a new release**. Tag it `v<version>` (e.g. `v0.3.0`) — the `v`
-   is optional, the app strips it either way. Attach `release/147-debug.apk`. Publish.
-4. Optional: attach the `.exe` files too, for anyone installing the desktop app fresh.
+   is optional, the app strips it either way, and it also tolerates a stray dot right after the
+   `v` (a typo like `v.0.3.9`) so a slightly-off tag doesn't break the check. Attach
+   `release/147-debug.apk` and `release/147 Setup <version>.exe`. Publish.
 
 Steps 1-2 are scriptable; step 3 needs a browser session on github.com, so it stays manual (or
 hook up the `gh` CLI / a GitHub Action later if this gets tedious).
@@ -254,6 +260,12 @@ phone app — there is no sync.
     unilaterally — it files a request that a *different* linked device has to approve via a popup
     before the slot actually frees up.
 20. **DONE** — swipe left/right between the four main tabs on touch devices.
+21. **DONE** — online/offline dot and rename per linked device; a backdated class whose whole
+    ladder window already elapsed jumps straight to resolved instead of dumping three overdue
+    blurts into Today; a "skip all carried-over" bulk action past 10 overdue; a hide/show toggle
+    for the cleared-today list; the 1-4-7 ladder chains off each blurt's actual completion instead
+    of fixed offsets from the class date; a manual "refresh blurt schedule" button in Settings to
+    rebuild open ladder steps under the current rules without touching anything already resolved.
 
 ## Layout
 
@@ -271,7 +283,7 @@ phone app — there is no sync.
 | `src/updateBanner.ts`   | background update check + Restart now/Later banner              |
 | `src/pulltorefresh.ts`  | pull-to-refresh gesture, forces an immediate sync                |
 | `src/swipeNav.ts`       | swipe left/right between the four main tabs (touch only)         |
-| `src/util.ts`           | local-time date maths, `R147_OFFSETS`, ids, escaping            |
+| `src/util.ts`           | local-time date maths, `R147_GAPS`, ids, escaping                |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |
 | `src/views/*.ts`        | today, log, plan, blurt, subjects, subject, chapter, parts      |

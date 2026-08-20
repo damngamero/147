@@ -1,13 +1,9 @@
 import * as db from './db';
 import { chapterById, emit, logsOf, store, topicsOf } from './state';
 import type { Blurt, BlurtCycle, Chapter, ClassLog, ID, ISODate, Topic } from './types';
-import { FORTNIGHTLY_GAP, R147_OFFSETS, WEEKLY_GAP, addDays, todayISO } from './util';
+import { FORTNIGHTLY_GAP, R147_GAPS, WEEKLY_GAP, addDays, todayISO } from './util';
 
-const LADDER: Array<{ cycle: Extract<BlurtCycle, 'r1' | 'r4' | 'r7'>; offset: number }> = [
-  { cycle: 'r1', offset: R147_OFFSETS.r1 },
-  { cycle: 'r4', offset: R147_OFFSETS.r4 },
-  { cycle: 'r7', offset: R147_OFFSETS.r7 },
-];
+const LADDER_CYCLES: Array<Extract<BlurtCycle, 'r1' | 'r4' | 'r7'>> = ['r1', 'r4', 'r7'];
 
 export const CYCLE_LABEL: Record<BlurtCycle, string> = {
   r1: 'blurt 1',
@@ -61,16 +57,16 @@ export function doneOnDate(date: ISODate): Blurt[] {
 /* ---------- ladders, per class ---------- */
 
 function ladderOf(logId: ID): Blurt[] {
-  return LADDER.map((s) => blurtById(`b_${logId}_${s.cycle}`)).filter((b): b is Blurt => !!b);
+  return LADDER_CYCLES.map((c) => blurtById(`b_${logId}_${c}`)).filter((b): b is Blurt => !!b);
 }
 
 export function ladderResolved(log: ClassLog): boolean {
   const l = ladderOf(log.id);
-  return l.length === LADDER.length && l.every(isResolved);
+  return l.length === LADDER_CYCLES.length && l.every(isResolved);
 }
 
 export function ladderProgress(log: ClassLog): { done: number; total: number } {
-  return { done: ladderOf(log.id).filter(isResolved).length, total: LADDER.length };
+  return { done: ladderOf(log.id).filter(isResolved).length, total: LADDER_CYCLES.length };
 }
 
 /** The class a topic was first taught in — what its 1-4-7 actually hangs off. */
@@ -179,44 +175,69 @@ export async function syncSchedule(): Promise<void> {
     const graduated = !!ch?.fortnightlyFrom;
 
     // One 1-4-7 ladder per class — every topic in it comes up together.
-    //
-    // A class logged well after the fact (backdated past the whole ladder
-    // window) would otherwise dump all three overdue steps into Today at
+    // Each step chains off the ACTUAL resolution of the one before it, not a
+    // fixed offset from the class date: blurt 1 is class+1, blurt 2 is
+    // whenever-blurt-1-got-done+4, blurt 3 is whenever-blurt-2-got-done+7.
+    // Doing a step late slides everything after it — that's the point of a
+    // chained ladder instead of three independent deadlines.
+    const r1Id = `b_${log.id}_r1`;
+    const r4Id = `b_${log.id}_r4`;
+    const r7Id = `b_${log.id}_r7`;
+
+    // A class logged well after the fact (backdated past the whole ladder's
+    // total span) would otherwise dump all three overdue steps into Today at
     // once. If nothing in the ladder exists yet and the class is already
-    // older than r7's offset, skip straight to "resolved" instead — the
-    // class jumps straight onto weekly (or fortnightly, if the chapter
+    // older than the full 1+4+7 span, skip straight to "resolved" instead —
+    // the class jumps straight onto weekly (or fortnightly, if the chapter
     // already qualifies) rather than making today re-litigate three blurts
     // for something learned weeks ago.
-    const ladderIds = LADDER.map((step) => `b_${log.id}_${step.cycle}`);
-    const ladderIsFresh = ladderIds.every((id) => !blurtById(id));
-    const ladderWindowPassed = addDays(log.date, R147_OFFSETS.r7) < today;
-    const backdatedPastLadder = ladderIsFresh && ladderWindowPassed;
+    const ladderIsFresh = !blurtById(r1Id) && !blurtById(r4Id) && !blurtById(r7Id);
+    const totalSpan = R147_GAPS.r1 + R147_GAPS.r4 + R147_GAPS.r7;
+    const backdatedPastLadder = ladderIsFresh && addDays(log.date, totalSpan) < today;
 
-    for (const step of LADDER) {
-      const id = `b_${log.id}_${step.cycle}`;
-      const want = addDays(log.date, step.offset);
+    function chainStep(
+      id: string,
+      cycle: Extract<BlurtCycle, 'r1' | 'r4' | 'r7'>,
+      base: ISODate,
+      gap: number,
+    ): void {
       const existing = blurtById(id);
-      if (!existing) {
-        const b = newBlurt({
-          id,
-          kind: 'class',
-          refId: log.id,
-          subjectId: log.subjectId,
-          chapterId: log.chapterId,
-          dueDate: want,
-          cycle: step.cycle,
-          seq: 0,
-        });
-        if (backdatedPastLadder) {
-          b.status = 'missed';
-          b.doneOn = today;
-        }
-        upsert(p, b);
-      } else if (existing.status === 'due' && existing.dueDate !== want) {
-        existing.dueDate = want; // the class date was edited
-        upsert(p, existing);
+      if (existing) return;
+      const b = newBlurt({
+        id,
+        kind: 'class',
+        refId: log.id,
+        subjectId: log.subjectId,
+        chapterId: log.chapterId,
+        dueDate: addDays(base, gap),
+        cycle,
+        seq: 0,
+      });
+      if (backdatedPastLadder) {
+        b.status = 'missed';
+        b.doneOn = today;
+        b.dueDate = today;
+      }
+      upsert(p, b);
+    }
+
+    // r1 anchors to the class date — edited class dates still move it while it's open.
+    if (!blurtById(r1Id)) {
+      chainStep(r1Id, 'r1', log.date, R147_GAPS.r1);
+    } else {
+      const r1 = blurtById(r1Id)!;
+      const want = addDays(log.date, R147_GAPS.r1);
+      if (r1.status === 'due' && r1.dueDate !== want) {
+        r1.dueDate = want;
+        upsert(p, r1);
       }
     }
+
+    const r1 = blurtById(r1Id);
+    if (r1 && isResolved(r1)) chainStep(r4Id, 'r4', r1.doneOn ?? r1.dueDate, R147_GAPS.r4);
+
+    const r4 = blurtById(r4Id);
+    if (r4 && isResolved(r4)) chainStep(r7Id, 'r7', r4.doneOn ?? r4.dueDate, R147_GAPS.r7);
 
     const weeklies = blurtsFor('class', log.id).filter((b) => b.cycle === 'weekly');
     const cleared = ladderResolved(log);
@@ -277,6 +298,23 @@ export async function syncSchedule(): Promise<void> {
   ]);
 
   if (p.blurts.size || p.removed.size || p.chapters.size) emit();
+}
+
+/**
+ * Drops every still-open (not yet resolved) r4/r7 blurt and reruns the sync
+ * so they regenerate under the current chaining rules — a manual fix-up for
+ * blurts scheduled before a scheduling-logic change, without touching
+ * anything already resolved (history and scores stay put).
+ */
+export async function refreshLadders(): Promise<void> {
+  const stale = store.blurts.filter(
+    (b) => b.status === 'due' && (b.cycle === 'r4' || b.cycle === 'r7'),
+  );
+  const ids = stale.map((b) => b.id);
+  store.blurts = store.blurts.filter((b) => !ids.includes(b.id));
+  await db.delMany('blurts', ids);
+  await syncSchedule();
+  emit();
 }
 
 /* ---------- what a blurt covers ---------- */
