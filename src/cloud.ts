@@ -27,7 +27,7 @@ import type { Auth } from 'firebase/auth';
 import type { Firestore } from 'firebase/firestore';
 
 import * as db from './db';
-import { boot, emit, store } from './state';
+import { boot, store } from './state';
 import { syncSchedule } from './schedule';
 import type { Tombstone } from './types';
 
@@ -523,7 +523,7 @@ export async function getSyncToken(): Promise<
   }
 }
 
-/** Replaces the token outright — the old one stops resolving immediately. */
+/** Replaces the token outright — the old one stops resolving immediately. Only touches the token/pairs docs, never accountKey, devices, or synced data. */
 export async function regenerateSyncToken(): Promise<
   { ok: true; code: string } | { ok: false; message: string }
 > {
@@ -678,7 +678,10 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
     await boot();
     await syncSchedule();
     state.lastSync = Date.now();
-    emit();
+    // Not emit() here — that's the "local data changed" signal main.ts uses to
+    // schedule another debounced sync, and firing it from inside sync() itself
+    // re-armed a new sync every few seconds forever. onChangeCb (below, in
+    // finally) already re-renders with the pulled data; that's all this needs.
     return { ok: true, message: `Synced — ${pulled} pulled, ${pushed} records in the cloud.` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
