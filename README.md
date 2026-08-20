@@ -253,6 +253,7 @@ phone app — there is no sync.
     at 3 devices per account. Removing a device other than the one you're on doesn't act
     unilaterally — it files a request that a *different* linked device has to approve via a popup
     before the slot actually frees up.
+20. **DONE** — swipe left/right between the four main tabs on touch devices.
 
 ## Layout
 
@@ -269,6 +270,7 @@ phone app — there is no sync.
 | `src/update.ts`         | GitHub Releases version check + install trigger (Android + desktop) |
 | `src/updateBanner.ts`   | background update check + Restart now/Later banner              |
 | `src/pulltorefresh.ts`  | pull-to-refresh gesture, forces an immediate sync                |
+| `src/swipeNav.ts`       | swipe left/right between the four main tabs (touch only)         |
 | `src/util.ts`           | local-time date maths, `R147_OFFSETS`, ids, escaping            |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |
