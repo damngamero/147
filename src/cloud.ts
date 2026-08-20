@@ -429,7 +429,13 @@ export async function initCloud(onChange: () => void): Promise<void> {
   if (!ready) return;
   await ensureAnon(ready);
   onChange();
-  if (state.linked) void sync();
+  if (state.linked) {
+    // Devices linked before the device-list existed never got registered —
+    // backfill on every launch so they show up instead of reading as "0 devices".
+    const key = accountKey();
+    if (key) void registerDevice(ready.fs, key);
+    void sync();
+  }
 }
 
 /**
