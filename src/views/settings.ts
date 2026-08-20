@@ -11,6 +11,7 @@ import {
   readConfig,
   redeemSyncToken,
   regenerateSyncToken,
+  renameDevice,
   requestDeviceRemoval,
   saveConfig,
   startSync,
@@ -93,18 +94,23 @@ function devicesHtml(): string {
   if (!devices) return '<p class="muted small">Loading…</p>';
   if (!devices.length) return '<p class="muted small">No devices registered yet.</p>';
   return devices
-    .map(
-      (d) => `
+    .map((d) => {
+      const label = d.name ? esc(d.name) : d.isThisDevice ? 'This device' : `Device ${esc(d.id.slice(0, 4))}`;
+      return `
       <div class="setting-row">
         <span class="grow">
-          <div class="title">${d.isThisDevice ? 'This device' : `Device ${esc(d.id.slice(0, 4))}`}</div>
+          <div class="title">
+            <span class="status-dot ${d.online ? 'on' : ''}" title="${d.online ? 'Online' : 'Offline'}"></span>
+            ${label}${d.isThisDevice && d.name ? ' <span class="dim">(this device)</span>' : ''}
+          </div>
           <div class="sub">Linked ${ago(d.linkedAt)}</div>
         </span>
+        <button class="btn sm ghost" data-act="rename-device" data-id="${d.id}" data-name="${esc(d.name ?? '')}">Rename</button>
         <button class="btn sm ghost danger" data-act="${d.isThisDevice ? 'cloud-unlink' : 'req-remove'}" data-id="${d.id}" data-linked-at="${d.linkedAt}">
           ${d.isThisDevice ? 'Unlink' : 'Request removal'}
         </button>
-      </div>`,
-    )
+      </div>`;
+    })
     .join('');
 }
 
@@ -239,7 +245,7 @@ function syscalCard(): string {
     </div>`;
 }
 
-/* ---------- updates ---------- */
+/* ---------- updates (Android sideload only) ---------- */
 
 function updateCard(): string {
   const busy = updateState === 'checking' || updateState === 'installing';
@@ -519,11 +525,29 @@ export function wire(root: HTMLElement): void {
       }
     }
 
+    if (act === 'rename-device') {
+      const name = await askText({
+        title: 'Rename this device',
+        label: 'Shown to every device on the account',
+        okLabel: 'Rename',
+        value: el.dataset.name ?? '',
+      });
+      if (name === null) return;
+      const res = await renameDevice(el.dataset.id!, name);
+      toast(res.message);
+      if (res.ok) {
+        devices = null;
+        rerender();
+      }
+    }
+
     if (act === 'req-remove') {
       const target: DeviceInfo = {
         id: el.dataset.id!,
         linkedAt: Number(el.dataset.linkedAt),
         isThisDevice: false,
+        name: null,
+        online: false,
       };
       const yes = await confirmBox({
         title: 'Request removal of this device?',

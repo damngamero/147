@@ -172,6 +172,12 @@ html, body {
 .sync-dot.error { background: var(--bad); border-color: var(--bad); }
 @keyframes sync-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+.status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--fg-3); margin-right: 6px; flex: none;
+}
+.status-dot.on { background: var(--good); }
+
 .ptr-indicator {
   position: fixed; top: 0; left: 50%; z-index: 30;
   width: 34px; height: 34px; border-radius: 50%;

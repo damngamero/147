@@ -242,12 +242,18 @@ function setAccountKey(key: string): void {
 interface DeviceEntry {
   id: string;
   linkedAt: number;
+  name?: string;
+  lastSeen?: number;
 }
+
+/** A device counts as "online" if it's touched lastSeen within this window — see registerDevice. */
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 /**
  * Adds this device to the account's device list, refusing past MAX_DEVICES —
- * unless it is already on the list, in which case re-registering is always
- * fine (a device already in never gets bumped by others joining later).
+ * unless it is already on the list, in which case this just bumps its
+ * lastSeen (called on every launch and every sync, so it doubles as the
+ * online/offline heartbeat).
  */
 async function registerDevice(
   fs: Firestore,
@@ -260,8 +266,14 @@ async function registerDevice(
     (d) => d.id,
   );
   const id = deviceId();
+  const now = Date.now();
 
-  if (items.some((d) => d.id === id)) return { ok: true, count: items.length };
+  const idx = items.findIndex((d) => d.id === id);
+  if (idx !== -1) {
+    items[idx] = { ...items[idx], lastSeen: now };
+    await setDoc(ref, { items });
+    return { ok: true, count: items.length };
+  }
   if (items.length >= MAX_DEVICES) {
     return {
       ok: false,
@@ -269,15 +281,42 @@ async function registerDevice(
     };
   }
 
-  items.push({ id, linkedAt: Date.now() });
+  items.push({ id, linkedAt: now, lastSeen: now });
   await setDoc(ref, { items });
   return { ok: true, count: items.length };
+}
+
+/** Lets a device rename itself or any other device in the list — cosmetic only, no approval needed. */
+export async function renameDevice(id: string, name: string): Promise<{ ok: boolean; message: string }> {
+  const key = accountKey();
+  if (!key) return { ok: false, message: 'Not linked.' };
+  const ready = await ensureApp();
+  if (!ready) return { ok: false, message: 'Not configured.' };
+
+  try {
+    await ensureAnon(ready);
+    const { doc, getDoc, setDoc } = await import('firebase/firestore');
+    const ref = doc(ready.fs, 'accounts', key, 'data', 'devices');
+    const snap = await getDoc(ref);
+    const items = ((snap.data() as { items?: DeviceEntry[] } | undefined)?.items ?? []).filter(
+      (d) => d.id,
+    );
+    const idx = items.findIndex((d) => d.id === id);
+    if (idx === -1) return { ok: false, message: 'Device not found.' };
+    items[idx] = { ...items[idx], name: name.trim().slice(0, 30) };
+    await setDoc(ref, { items });
+    return { ok: true, message: 'Renamed.' };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export interface DeviceInfo {
   id: string;
   linkedAt: number;
   isThisDevice: boolean;
+  name: string | null;
+  online: boolean;
 }
 
 /**
@@ -297,9 +336,16 @@ export async function listDevices(): Promise<DeviceInfo[] | null> {
     const snap = await getDoc(doc(ready.fs, 'accounts', key, 'data', 'devices'));
     const items = (snap.data() as { items?: DeviceEntry[] } | undefined)?.items ?? [];
     const self = deviceId();
+    const now = Date.now();
     return [...items]
       .sort((a, b) => a.linkedAt - b.linkedAt)
-      .map((d) => ({ id: d.id, linkedAt: d.linkedAt, isThisDevice: d.id === self }));
+      .map((d) => ({
+        id: d.id,
+        linkedAt: d.linkedAt,
+        isThisDevice: d.id === self,
+        name: d.name ?? null,
+        online: now - (d.lastSeen ?? d.linkedAt) < ONLINE_WINDOW_MS,
+      }));
   } catch {
     return null;
   }
@@ -615,6 +661,10 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
   try {
     await ensureAnon(ready);
     const { doc, getDoc, setDoc } = await import('firebase/firestore');
+
+    // Fire-and-forget — bumps this device's lastSeen so the online dot in
+    // Settings stays fresh without slowing the actual data sync down.
+    void registerDevice(ready.fs, key);
 
     const tombRef = doc(ready.fs, 'accounts', key, 'data', 'deletes');
     const storeRefs = SYNCED.map(({ name }) => doc(ready.fs, 'accounts', key, 'data', name));

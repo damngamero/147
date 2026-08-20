@@ -72,14 +72,18 @@ ipcMain.handle('update:install', async (_event, url) => {
     // /S = silent NSIS install, no wizard. Works without elevation because
     // the installer is built with perMachine:false (installs under the
     // current user, not Program Files).
-    await new Promise((resolve, reject) => {
-      const child = spawn(out, ['/S'], { stdio: 'ignore' });
-      child.on('error', reject);
-      child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`Installer exited with code ${code}`))));
-    });
+    //
+    // Crucially: this app's own exe is a locked file while it's running, so
+    // the installer cannot overwrite it — and NSIS's silent mode swallows
+    // that failure instead of reporting it, exiting 0 while the actual
+    // binary never got replaced. So: spawn detached and unref'd, then quit
+    // *immediately* to release the lock before the installer gets to that
+    // file. electron-builder's NSIS defaults to launching the freshly
+    // installed app once setup finishes, so nothing has to relaunch it here.
+    const child = spawn(out, ['/S'], { detached: true, stdio: 'ignore' });
+    child.unref();
 
-    app.relaunch();
-    app.quit();
+    setTimeout(() => app.quit(), 300);
     return { ok: true };
   } catch (err) {
     return { ok: false, message: err && err.message ? err.message : String(err) };
