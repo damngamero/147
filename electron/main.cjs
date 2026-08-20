@@ -40,7 +40,9 @@ ipcMain.handle('update:check', async () => {
     }
     const rel = await res.json();
     const version = String(rel.tag_name || '').replace(/^v/i, '');
-    const asset = (rel.assets || []).find((a) => /^147 Setup .*\.exe$/i.test(a.name));
+    // GitHub swaps spaces in uploaded filenames for dots (e.g. "147 Setup 0.3.5.exe" ->
+    // "147.Setup.0.3.5.exe"), so match either separator.
+    const asset = (rel.assets || []).find((a) => /^147[ .]Setup[ .].*\.exe$/i.test(a.name));
     const current = app.getVersion();
 
     if (!version || !isNewer(version, current)) {
