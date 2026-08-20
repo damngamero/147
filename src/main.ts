@@ -2,6 +2,7 @@ import './styles.css';
 import { setRenderer } from './app';
 import { cloudState, initCloud, onCloudChange, sync, syncSoon } from './cloud';
 import { initPullToRefresh } from './pulltorefresh';
+import { initSwipeNav } from './swipeNav';
 import { onSyscalChange, syscalSoon } from './syscal';
 import { applyTheme } from './theme';
 import { parseHash, type Route } from './router';
@@ -201,6 +202,7 @@ async function start(): Promise<void> {
   onCloudChange(render);
   onSyscalChange(render);
   initPullToRefresh(forceRefresh);
+  initSwipeNav();
   watchForUpdates();
   maybeStartTour();
 }
