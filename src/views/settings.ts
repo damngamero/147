@@ -604,20 +604,6 @@ export function wire(root: HTMLElement): void {
     }
 
     if (act === 'update-install' && updateInfo) {
-      const backupFirst = await confirmBox({
-        title: 'Back up before updating?',
-        body: 'Updating never touches your data, but exporting a backup first is one tap of insurance.',
-        okLabel: 'Back up, then update',
-      });
-      if (backupFirst) {
-        await saveFile(
-          `147-backup-${stamp()}.json`,
-          'application/json',
-          JSON.stringify(buildBackup(), null, 2),
-        );
-        toast('Backup saved');
-      }
-
       if (cloudState().linked) await sync().catch(() => undefined);
 
       const allowed = await canInstallUpdates();
