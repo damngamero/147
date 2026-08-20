@@ -125,7 +125,7 @@ service cloud.firestore {
       <p class="muted small">Those rules mean any device that has signed in (anonymously — no
       account needed) can read or write, as long as it knows the right <code>accountKey</code>.
       That key is a long random string generated on your first device and never shown on
-      screen — the six-digit codes you actually see are short-lived, single-use pointers to it.</p>
+      screen — the six-digit sync token you actually see is just a permanent pointer to it.</p>
     </div>
 
     <h2>Adding a second device</h2>
@@ -138,6 +138,21 @@ service cloud.firestore {
       <p class="muted small">The token never expires, so there is no rush and nothing to
       regenerate for a normal link-up. <b>Regenerate token</b> exists for if the token ever leaks
       — it replaces it outright, and the old one stops working immediately.</p>
+      <p class="muted small">Up to <b>3 devices</b> per account. A fourth is refused until a slot
+      frees up.</p>
+    </div>
+
+    <h2>Freeing up a device slot</h2>
+    <div class="card guide-body">
+      <p>Settings → Cloud sync lists every linked device. Removing <b>this device</b> (the one
+      you're on) unlinks it immediately, no approval needed.</p>
+      <p>Removing a <b>different</b> device — say, one you sold or lost — only files a request.
+      It cannot be done unilaterally from one device. The next time any other linked device opens
+      Settings, it gets a popup: <b>Approve</b> actually removes it and frees the slot;
+      <b>Deny</b> leaves it linked.</p>
+      <p class="muted small">This is what makes it safe to hand the "remove" button to any device
+      — a single compromised or fat-fingered device can't kick the others off without a second
+      one signing off.</p>
     </div>
 
     <h2>How sync resolves clashes</h2>
@@ -149,8 +164,7 @@ service cloud.firestore {
       the next time the other one syncs.</p>
       <p>Sync runs on launch and a few seconds after any change. There is no manual sync button
       because there is nothing to press — logging a class or clearing a blurt is what triggers
-      it. Reads and writes fire in parallel batches rather than one at a time, so a full sync is
-      usually a couple of seconds, not longer.</p>
+      it.</p>
     </div>
 
     <h2>The 147 calendar — kept separate from your real one</h2>
@@ -176,9 +190,6 @@ service cloud.firestore {
       shows the due count and the next few topics; tapping it opens the app.</p>
       <p><b>Backup</b> — Settings → Export JSON. Worth doing before a reinstall even with cloud sync
       switched on.</p>
-      <p><b>Updates</b> — checked automatically on launch and every few hours in the background;
-      a <b>Restart now / Later</b> banner shows up when one is found. The desktop build restarts
-      itself silently; the Android build hands off to the system installer.</p>
     </div>`;
 }
 

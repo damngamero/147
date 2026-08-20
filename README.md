@@ -113,13 +113,18 @@ hook up the `gh` CLI / a GitHub Action later if this gets tedious).
   sync is a full replace (clear the 147 calendar's events, write the current schedule fresh), so
   there is nothing to reconcile and nothing can go stale. Needs only the normal Android calendar
   permission — no account, no OAuth, no internet. `android/.../CalendarPlugin.java`.
-- **Self-update (Android)** — Settings → Updates. Checks the latest GitHub Release, and if it is
-  newer than the running build, downloads the attached APK and hands it to the system installer.
-  Nothing automatic: you press *Check for updates*, then *Install*. Needs the repo to be public
-  (an unauthenticated `fetch` against the GitHub API) and, the first time, the "install unknown
-  apps" toggle for 147 specifically — the app walks you to that screen if it is off.
-  `android/.../UpdaterPlugin.java`, `src/update.ts`. See "Cutting a release" above for how a new
-  version actually reaches this check.
+- **Self-update (Android + desktop)** — checked automatically on launch and every few hours in
+  the background; a **Restart now / Later** popup shows up when a newer build is found (Settings
+  → Updates also has a manual "Check for updates" button). Needs the repo to be public (an
+  unauthenticated `fetch` against the GitHub API).
+  - **Android**: downloads the attached APK and hands it to the system installer — needs, the
+    first time, the "install unknown apps" toggle for 147 specifically, which the app walks you
+    to if it's off. `android/.../UpdaterPlugin.java`.
+  - **Desktop**: downloads the installer, runs it silently (`/S`, no wizard, no elevation needed
+    since it's a per-user install), then relaunches itself into the new build automatically.
+    `electron/main.cjs`, `electron/preload.cjs`.
+  - `src/update.ts` picks between the two; `src/updateBanner.ts` owns the popup. See "Cutting a
+    release" above for how a new version actually reaches this check.
 
 There is deliberately no Google Calendar or Google Tasks integration — see below for why.
 
@@ -163,6 +168,18 @@ syncs — pulling in everything from the first device, pushing up anything only 
 **Regenerate token** replaces it outright if it ever leaks; the old one stops resolving
 immediately. The real secret is still the `accountKey`, which is never shown on screen — the
 token is just a lookup for it.
+
+**Capped at 3 devices per account** — each device has its own random id (separate from the
+accountKey), tracked in `accounts/{accountKey}/data/devices`. Redeeming the token past that cap
+is refused outright rather than silently letting a fourth device in.
+
+**Freeing a slot needs a second device's approval** — a device can always unlink *itself*
+outright, but removing a *different* one (say, a laptop that got sold) only writes a request to
+`accounts/{accountKey}/data/removal`. No device can act on its own request. The next linked
+device that isn't the target and isn't the requester sees a pending request when it opens
+Settings and gets an approve/deny popup — approving actually removes the target and frees the
+slot, denying just clears the request. This stops one device from unilaterally kicking another
+off the account.
 
 **Merge model** — last-write-wins per record on `updatedAt`, which `db.put` stamps on every
 write. Deletes leave a tombstone in the `deletes` store so they survive a sync instead of being
@@ -228,10 +245,14 @@ phone app — there is no sync.
     default footprint (was defaulting to roughly 3×2 cells).
 17. **DONE** — self-update for the sideloaded APK: checks GitHub Releases, downloads and launches
     the installer for a newer build. Manual, two button presses, no background polling.
-18. **DONE** — desktop self-update (silent install + relaunch), Restart now/Later banner on both
-    platforms, parallelized sync, pull-to-refresh, live sync-status dot, chip-style topic adder
-    with inline rename/delete, and a permanent regenerable sync token replacing the old 10-minute
-    pairing code.
+18. **DONE** — desktop self-update (silent install + relaunch), a Restart now/Later banner on both
+    platforms that checks in the background, parallelized sync (reads/writes batched instead of
+    sequential), pull-to-refresh, a live sync-status dot, and a chip-style topic adder with inline
+    rename/delete on the Log class page.
+19. **DONE** — the 10-minute pairing code became a permanent, regenerable **sync token**, capped
+    at 3 devices per account. Removing a device other than the one you're on doesn't act
+    unilaterally — it files a request that a *different* linked device has to approve via a popup
+    before the slot actually frees up.
 
 ## Layout
 
@@ -243,20 +264,20 @@ phone app — there is no sync.
 | `src/schedule.ts`       | **the 1-4-7 / weekly / fortnightly engine** — `syncSchedule()`  |
 | `src/notify.ts`         | reminders (web + Android) and the widget payload bridge         |
 | `src/backup.ts`         | JSON export/import, native file saving                          |
-| `src/cloud.ts`          | Firebase config, anonymous auth, permanent sync token, last-write-wins merge |
+| `src/cloud.ts`          | Firebase config, anonymous auth, permanent sync token + device cap, last-write-wins merge |
 | `src/syscal.ts`         | bridges to the native local Android calendar                    |
-| `src/update.ts`         | GitHub Releases version check + install trigger                 |
-| `src/updateBanner.ts`   | Restart now/Later banner, checked in the background              |
-| `src/pulltorefresh.ts`  | pull-to-refresh gesture                                          |
+| `src/update.ts`         | GitHub Releases version check + install trigger (Android + desktop) |
+| `src/updateBanner.ts`   | background update check + Restart now/Later banner              |
+| `src/pulltorefresh.ts`  | pull-to-refresh gesture, forces an immediate sync                |
 | `src/util.ts`           | local-time date maths, `R147_OFFSETS`, ids, escaping            |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |
 | `src/views/*.ts`        | today, log, plan, blurt, subjects, subject, chapter, parts      |
 | `src/theme.ts`          | the four themes and how they are applied                          |
 | `src/tour.ts`           | first-run walkthrough overlay                                    |
-| `src/main.ts`           | shell, tabs, render loop, day rollover                          |
+| `src/main.ts`           | shell, tabs, render loop, day rollover, background update watch |
 | `electron/main.cjs`     | desktop window + IPC handlers for self-update                   |
-| `electron/preload.cjs`  | exposes window.desktopUpdater to the renderer                   |
+| `electron/preload.cjs`  | exposes `window.desktopUpdater` to the renderer                 |
 | `scripts/apk.mjs`       | SDK/JDK detection + gradle build + APK copy                     |
 | `scripts/exe.mjs`       | Electron unpack workaround + electron-builder                    |
 | `android/.../BlurtWidget.java` | home screen widget provider                             |
