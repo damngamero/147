@@ -1,9 +1,9 @@
 import { rerender } from '../app';
 import { doneOnDate, dueBy, reopenBlurt, skipAllLate, skipBlurt, snoozeBlurt } from '../schedule';
-import { dayLog, saveDayLog, store } from '../state';
+import { store } from '../state';
 import { confirmBox, onAct, toast } from '../ui';
-import { esc, fmtDate, todayISO } from '../util';
-import { blurtRow, labelFor, section } from './parts';
+import { fmtDate, todayISO } from '../util';
+import { blurtRow, section } from './parts';
 
 /** Only relevant once a pile of overdue stuff shows up — a fresh backdated class or two. */
 const SKIP_ALL_THRESHOLD = 10;
@@ -19,8 +19,6 @@ export function render(): string {
   const due = dueBy(today);
   const late = due.filter((b) => b.dueDate < today);
   const doneToday = doneOnDate(today);
-  const note = dayLog(today)?.note ?? '';
-  const doneNames = doneToday.map((b) => labelFor(b).title);
 
   return `
     <h1>${fmtDate(today)}</h1>
@@ -60,28 +58,12 @@ export function render(): string {
         : ''
     }
 
-    <h2>What I got done today</h2>
-    <div class="card">
-      <div class="field" style="margin-bottom:10px">
-        <label>Anything worth remembering about today</label>
-        <textarea data-f="daynote">${esc(note)}</textarea>
-      </div>
-      <div class="actions">
-        <button class="btn primary" data-act="save-day">Save note</button>
-        ${doneNames.length ? '<button class="btn ghost" data-act="fill-day">Fill from what I cleared</button>' : ''}
-        <span class="spacer"></span>
-        <a class="btn" href="#/log">+ Log a class</a>
-      </div>
-      ${
-        doneNames.length
-          ? `<div class="chips">${doneNames.map((n) => `<span class="pill good">${esc(n)}</span>`).join('')}</div>`
-          : ''
-      }
+    <div class="actions" style="margin-top:10px">
+      <a class="btn" href="#/log">+ Log a class</a>
     </div>`;
 }
 
 export function wire(root: HTMLElement): void {
-  const area = root.querySelector<HTMLTextAreaElement>('[data-f="daynote"]');
   const today = todayISO();
 
   onAct(root, async (act, el) => {
@@ -116,20 +98,5 @@ export function wire(root: HTMLElement): void {
       if (skip) await skipBlurt(id);
       else await snoozeBlurt(id, 1);
     }
-
-    if (act === 'save-day' && area) {
-      await saveDayLog(today, area.value);
-      toast('Saved');
-    }
-    if (act === 'fill-day' && area) {
-      const line = `Blurted: ${doneOnDate(today).map((b) => labelFor(b).title).join('; ')}`;
-      area.value = area.value.trim() ? `${area.value.trim()}\n${line}` : line;
-      await saveDayLog(today, area.value);
-    }
-  });
-
-  area?.addEventListener('blur', () => {
-    const current = dayLog(today)?.note ?? '';
-    if (area.value !== current) void saveDayLog(today, area.value);
   });
 }
