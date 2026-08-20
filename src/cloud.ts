@@ -10,10 +10,14 @@
  * Data is partitioned by a random `accountKey` generated locally on the first
  * device, not by the Firebase uid (every anonymous session gets its own,
  * unrelated uid — there is no way to make two anonymous sessions share one
- * without a server). To add a second device, the first one has a permanent
- * six-digit sync token that maps to its accountKey in Firestore; the second
- * device reads that mapping once and adopts the same accountKey. After that,
- * both devices just sync straight to `accounts/{accountKey}/...`.
+ * without a server). A permanent six-digit sync token maps to that accountKey
+ * in Firestore; any device that redeems it adopts the same accountKey. After
+ * that, every device just syncs straight to `accounts/{accountKey}/...`.
+ *
+ * Each account tracks up to MAX_DEVICES distinct device ids (a random id
+ * generated once per device, separate from the accountKey) — redeeming the
+ * token past that cap is refused rather than silently letting in a fourth
+ * device.
  *
  * Merge strategy is last-write-wins per record on `updatedAt`, with tombstones
  * so a delete on one device does not get resurrected by the other.
@@ -29,6 +33,8 @@ import type { Tombstone } from './types';
 
 const CONFIG_KEY = '147_firebase_config';
 const ACCOUNT_KEY = '147_account_key';
+const DEVICE_ID_KEY = '147_device_id';
+const MAX_DEVICES = 3;
 
 /** Stores that take part in sync, and the field each is keyed by. */
 const SYNCED = [
@@ -214,6 +220,16 @@ function randomDigits(n: number): string {
   return String(arr[0] % 10 ** n).padStart(n, '0');
 }
 
+/** A stable id for this device, separate from the accountKey — what the device cap counts. */
+function deviceId(): string {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = randomHex(8);
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+
 export function accountKey(): string | null {
   return localStorage.getItem(ACCOUNT_KEY);
 }
@@ -221,6 +237,186 @@ export function accountKey(): string | null {
 function setAccountKey(key: string): void {
   localStorage.setItem(ACCOUNT_KEY, key);
   state.linked = true;
+}
+
+interface DeviceEntry {
+  id: string;
+  linkedAt: number;
+}
+
+/**
+ * Adds this device to the account's device list, refusing past MAX_DEVICES —
+ * unless it is already on the list, in which case re-registering is always
+ * fine (a device already in never gets bumped by others joining later).
+ */
+async function registerDevice(
+  fs: Firestore,
+  key: string,
+): Promise<{ ok: true; count: number } | { ok: false; message: string }> {
+  const { doc, getDoc, setDoc } = await import('firebase/firestore');
+  const ref = doc(fs, 'accounts', key, 'data', 'devices');
+  const snap = await getDoc(ref);
+  const items = ((snap.data() as { items?: DeviceEntry[] } | undefined)?.items ?? []).filter(
+    (d) => d.id,
+  );
+  const id = deviceId();
+
+  if (items.some((d) => d.id === id)) return { ok: true, count: items.length };
+  if (items.length >= MAX_DEVICES) {
+    return {
+      ok: false,
+      message: `This sync token already has ${MAX_DEVICES} devices linked — unlink one, or regenerate the token to start fresh.`,
+    };
+  }
+
+  items.push({ id, linkedAt: Date.now() });
+  await setDoc(ref, { items });
+  return { ok: true, count: items.length };
+}
+
+export interface DeviceInfo {
+  id: string;
+  linkedAt: number;
+  isThisDevice: boolean;
+}
+
+/**
+ * Every device currently on this account — the whole point is being able to
+ * free a slot for a device you no longer have (a laptop that got sold, say)
+ * from any *other* device still linked, since the old one is gone and can
+ * never call unlink() on itself.
+ */
+export async function listDevices(): Promise<DeviceInfo[] | null> {
+  const key = accountKey();
+  if (!key) return null;
+  const ready = await ensureApp();
+  if (!ready) return null;
+  try {
+    await ensureAnon(ready);
+    const { doc, getDoc } = await import('firebase/firestore');
+    const snap = await getDoc(doc(ready.fs, 'accounts', key, 'data', 'devices'));
+    const items = (snap.data() as { items?: DeviceEntry[] } | undefined)?.items ?? [];
+    const self = deviceId();
+    return [...items]
+      .sort((a, b) => a.linkedAt - b.linkedAt)
+      .map((d) => ({ id: d.id, linkedAt: d.linkedAt, isThisDevice: d.id === self }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The actual removal primitive. Only called directly for this device
+ * removing itself (unlink) or by approveDeviceRemoval below — removing a
+ * *different* device always goes through the request/approve flow first, so
+ * one device can never unilaterally kick another off the account.
+ */
+async function removeDevice(id: string): Promise<{ ok: boolean; message: string }> {
+  const key = accountKey();
+  if (!key) return { ok: false, message: 'Not linked.' };
+  const ready = await ensureApp();
+  if (!ready) return { ok: false, message: 'Not configured.' };
+
+  try {
+    await ensureAnon(ready);
+    const { doc, getDoc, setDoc } = await import('firebase/firestore');
+    const ref = doc(ready.fs, 'accounts', key, 'data', 'devices');
+    const snap = await getDoc(ref);
+    const items = ((snap.data() as { items?: DeviceEntry[] } | undefined)?.items ?? []).filter(
+      (d) => d.id !== id,
+    );
+    await setDoc(ref, { items });
+
+    if (id === deviceId()) {
+      localStorage.removeItem(ACCOUNT_KEY);
+      state.linked = false;
+      return { ok: true, message: 'This device is unlinked.' };
+    }
+    return { ok: true, message: 'Device removed — its slot is free.' };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+interface RemovalRequest {
+  targetId: string;
+  targetLinkedAt: number;
+  requestedBy: string;
+  requestedAt: number;
+}
+
+/**
+ * Files a request to remove a *different* device — this device cannot do it
+ * alone. The next device that opens Settings and isn't the one being removed
+ * gets a popup to approve or deny it.
+ */
+export async function requestDeviceRemoval(
+  target: DeviceInfo,
+): Promise<{ ok: boolean; message: string }> {
+  const key = accountKey();
+  if (!key) return { ok: false, message: 'Not linked.' };
+  const ready = await ensureApp();
+  if (!ready) return { ok: false, message: 'Not configured.' };
+
+  try {
+    await ensureAnon(ready);
+    const { doc, setDoc } = await import('firebase/firestore');
+    const req: RemovalRequest = {
+      targetId: target.id,
+      targetLinkedAt: target.linkedAt,
+      requestedBy: deviceId(),
+      requestedAt: Date.now(),
+    };
+    await setDoc(doc(ready.fs, 'accounts', key, 'data', 'removal'), req);
+    return { ok: true, message: 'Waiting on another linked device to confirm the removal.' };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Checked by every device that isn't the requester — null unless one is actually waiting on it. */
+export async function pendingRemovalRequest(): Promise<RemovalRequest | null> {
+  const key = accountKey();
+  if (!key) return null;
+  const ready = await ensureApp();
+  if (!ready) return null;
+  try {
+    await ensureAnon(ready);
+    const { doc, getDoc } = await import('firebase/firestore');
+    const snap = await getDoc(doc(ready.fs, 'accounts', key, 'data', 'removal'));
+    const data = snap.data() as RemovalRequest | undefined;
+    if (!data || data.requestedBy === deviceId() || data.targetId === deviceId()) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function clearRemovalRequest(): Promise<void> {
+  const key = accountKey();
+  if (!key) return;
+  const ready = await ensureApp();
+  if (!ready) return;
+  try {
+    const { doc, deleteDoc } = await import('firebase/firestore');
+    await deleteDoc(doc(ready.fs, 'accounts', key, 'data', 'removal'));
+  } catch {
+    /* best effort */
+  }
+}
+
+/** Approve: actually removes the target device, then clears the request. */
+export async function approveDeviceRemoval(
+  targetId: string,
+): Promise<{ ok: boolean; message: string }> {
+  const res = await removeDevice(targetId);
+  await clearRemovalRequest();
+  return res;
+}
+
+/** Deny: removes nothing, just clears the pending request. */
+export async function denyDeviceRemoval(): Promise<void> {
+  await clearRemovalRequest();
 }
 
 /** Restores state on launch — no prompting, no network wait. */
@@ -251,17 +447,41 @@ export async function startSync(): Promise<{ ok: boolean; message: string }> {
     state.error = message;
     return { ok: false, message };
   }
-  setAccountKey(randomHex(16));
+  const key = randomHex(16);
+  setAccountKey(key);
+  await registerDevice(ready.fs, key);
   const res = await sync();
   return res.ok
     ? { ok: true, message: 'Sync is on. Your sync token is in this card — use it on another device.' }
     : res;
 }
 
-/** Stops syncing on this device. Local data stays; the cloud copy is untouched. */
-export function unlink(): void {
+/**
+ * Stops syncing on this device. Local data stays; the cloud copy is
+ * untouched. Best-effort removes this device from the account's device list
+ * so its slot frees up for the cap — a failed removal (offline, say) just
+ * leaves a stale entry, which is harmless.
+ */
+export async function unlink(): Promise<void> {
+  const key = accountKey();
   localStorage.removeItem(ACCOUNT_KEY);
   state.linked = false;
+  if (!key) return;
+
+  try {
+    const ready = await ensureApp();
+    if (!ready) return;
+    await ensureAnon(ready);
+    const { doc, getDoc, setDoc } = await import('firebase/firestore');
+    const ref = doc(ready.fs, 'accounts', key, 'data', 'devices');
+    const snap = await getDoc(ref);
+    const items = ((snap.data() as { items?: DeviceEntry[] } | undefined)?.items ?? []).filter(
+      (d) => d.id !== deviceId(),
+    );
+    await setDoc(ref, { items });
+  } catch {
+    /* best effort — the local unlink already happened either way */
+  }
 }
 
 /**
@@ -342,6 +562,10 @@ export async function redeemSyncToken(code: string): Promise<{ ok: boolean; mess
     const snap = await getDoc(doc(ready.fs, 'pairs', digits));
     const data = snap.data() as { accountKey?: string } | undefined;
     if (!data?.accountKey) return { ok: false, message: 'No such token — check the digits.' };
+
+    const reg = await registerDevice(ready.fs, data.accountKey);
+    if (!reg.ok) return { ok: false, message: reg.message };
+
     setAccountKey(data.accountKey);
     const res = await sync();
     return res.ok ? { ok: true, message: 'Linked. Everything from the other device is here.' } : res;

@@ -1,17 +1,23 @@
 import { rerender } from '../app';
 import { buildBackup, restoreBackup, saveFile, stamp } from '../backup';
 import {
+  approveDeviceRemoval,
   cloudState,
   clearConfig,
+  denyDeviceRemoval,
   getSyncToken,
+  listDevices,
+  pendingRemovalRequest,
   readConfig,
   redeemSyncToken,
   regenerateSyncToken,
+  requestDeviceRemoval,
   saveConfig,
   startSync,
   sync,
   unlink,
   usingBuiltInConfig,
+  type DeviceInfo,
 } from '../cloud';
 import { enableNotifications, notificationState } from '../notify';
 import { store } from '../state';
@@ -41,6 +47,9 @@ import { esc } from '../util';
 /** The account's permanent sync token, lazily loaded once per Settings visit. */
 let syncToken: string | null = null;
 let syncTokenLoading = false;
+let devices: DeviceInfo[] | null = null;
+/** Only ever pops the approve/deny popup once per Settings visit. */
+let removalChecked = false;
 
 /** null = not checked yet. Checked once per Settings visit, native side only. */
 let syscalPermission: boolean | null = null;
@@ -79,6 +88,25 @@ function themeCards(): string {
 }
 
 /* ---------- cloud ---------- */
+
+function devicesHtml(): string {
+  if (!devices) return '<p class="muted small">Loading…</p>';
+  if (!devices.length) return '<p class="muted small">No devices registered yet.</p>';
+  return devices
+    .map(
+      (d) => `
+      <div class="setting-row">
+        <span class="grow">
+          <div class="title">${d.isThisDevice ? 'This device' : `Device ${esc(d.id.slice(0, 4))}`}</div>
+          <div class="sub">Linked ${ago(d.linkedAt)}</div>
+        </span>
+        <button class="btn sm ghost danger" data-act="${d.isThisDevice ? 'cloud-unlink' : 'req-remove'}" data-id="${d.id}" data-linked-at="${d.linkedAt}">
+          ${d.isThisDevice ? 'Unlink' : 'Request removal'}
+        </button>
+      </div>`,
+    )
+    .join('');
+}
 
 function cloudCard(): string {
   const c = cloudState();
@@ -130,11 +158,6 @@ function cloudCard(): string {
         <span class="pill ${c.syncing ? 'warn' : 'good'}">${c.syncing ? 'syncing' : 'on'}</span>
       </div>
 
-      <div class="actions" style="margin-top:12px">
-        <span class="spacer"></span>
-        <button class="btn ghost danger" data-act="cloud-unlink">Unlink this device</button>
-      </div>
-
       <div class="pairing-code">
         <div class="pairing-digits">${syncToken ? esc(syncToken) : syncTokenLoading ? '······' : '——————'}</div>
         <div class="dim small">
@@ -146,6 +169,17 @@ function cloudCard(): string {
       <div class="actions" style="margin-top:10px">
         <button class="btn ghost danger sm" data-act="regen-token" ${syncToken ? '' : 'disabled'}>Regenerate token</button>
       </div>
+
+      <div class="setting-row">
+        <span class="grow">
+          <div class="title">Linked devices ${devices ? `<span class="dim">(${devices.length} of 3)</span>` : ''}</div>
+          <div class="sub">
+            Sold or lost a device? Remove it here from any other one still linked — that frees its
+            slot without needing it back in your hands.
+          </div>
+        </span>
+      </div>
+      ${devicesHtml()}
 
       ${c.error ? `<p class="small" style="color:var(--bad);margin-top:10px">${esc(c.error)}</p>` : ''}
     </div>`;
@@ -216,9 +250,9 @@ function updateCard(): string {
         <span class="grow">
           <div class="title">147 version ${esc(APP_VERSION)}</div>
           <div class="sub">
-            There is no app store here, so 147 checks GitHub directly, on launch and every few
-            hours in the background. If it finds something you get a Restart now / Later banner —
-            this card is only for checking by hand.
+            There is no app store here, so 147 checks GitHub directly — on launch and every few
+            hours in the background. A Restart now/Later popup shows up when it finds one; this
+            card is only for checking by hand.
           </div>
         </span>
       </div>
@@ -342,6 +376,35 @@ export function wire(root: HTMLElement): void {
     });
   }
 
+  if (cloudState().linked && devices === null) {
+    void listDevices().then((list) => {
+      devices = list;
+      rerender();
+    });
+  }
+
+  if (cloudState().linked && !removalChecked) {
+    removalChecked = true;
+    void pendingRemovalRequest().then(async (req) => {
+      if (!req) return;
+      const yes = await confirmBox({
+        title: 'Approve removing a device?',
+        body: `Another linked device wants to remove the one linked ${ago(req.targetLinkedAt)} — that frees its slot. Approve, or deny to keep it.`,
+        okLabel: 'Approve',
+        danger: true,
+      });
+      if (yes) {
+        const res = await approveDeviceRemoval(req.targetId);
+        toast(res.message);
+      } else {
+        await denyDeviceRemoval();
+        toast('Denied — the device stays linked.');
+      }
+      devices = null;
+      rerender();
+    });
+  }
+
   const file = root.querySelector<HTMLInputElement>('[data-f="file"]');
   file?.addEventListener('change', async () => {
     const f = file.files?.[0];
@@ -398,6 +461,7 @@ export function wire(root: HTMLElement): void {
       if (yes) {
         clearConfig();
         syncToken = null;
+        devices = null;
         rerender();
       }
     }
@@ -405,6 +469,7 @@ export function wire(root: HTMLElement): void {
     if (act === 'cloud-start') {
       const res = await startSync();
       toast(res.message);
+      devices = null;
       rerender();
     }
 
@@ -417,6 +482,7 @@ export function wire(root: HTMLElement): void {
       if (!code) return;
       const res = await redeemSyncToken(code);
       toast(res.message);
+      devices = null;
       rerender();
     }
 
@@ -446,10 +512,28 @@ export function wire(root: HTMLElement): void {
         danger: true,
       });
       if (yes) {
-        unlink();
+        await unlink();
         syncToken = null;
+        devices = null;
         rerender();
       }
+    }
+
+    if (act === 'req-remove') {
+      const target: DeviceInfo = {
+        id: el.dataset.id!,
+        linkedAt: Number(el.dataset.linkedAt),
+        isThisDevice: false,
+      };
+      const yes = await confirmBox({
+        title: 'Request removal of this device?',
+        body: 'This alone doesn’t remove it — another linked device has to approve the request first, so one device can’t unilaterally kick another off.',
+        okLabel: 'Send request',
+        danger: true,
+      });
+      if (!yes) return;
+      const res = await requestDeviceRemoval(target);
+      toast(res.message);
     }
 
     if (act === 'syscal-toggle') {
