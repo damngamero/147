@@ -1,7 +1,7 @@
 {
   "name": "app147",
   "private": true,
-  "version": "0.3.8",
+  "version": "0.3.9",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "Class log with an automatic 1-4-7 blurt schedule",
@@ -31,8 +31,7 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ],
       "icon": "build/icon.ico"
     },

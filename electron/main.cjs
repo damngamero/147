@@ -14,8 +14,9 @@ const UPDATE_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`
 
 /** "0.2.0" -> [0, 2, 0], compared numerically part by part — same rule as src/update.ts. */
 function isNewer(latest, current) {
-  const a = latest.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
-  const b = current.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  // Tolerates a stray dot after the v (e.g. a tag typed as "v.0.3.8").
+  const a = latest.replace(/^v\.?/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const b = current.replace(/^v\.?/i, '').split('.').map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const x = a[i] ?? 0;
     const y = b[i] ?? 0;
@@ -39,7 +40,7 @@ ipcMain.handle('update:check', async () => {
       return { ok: false, update: null, message: `GitHub said ${res.status} — no release found yet?` };
     }
     const rel = await res.json();
-    const version = String(rel.tag_name || '').replace(/^v/i, '');
+    const version = String(rel.tag_name || '').replace(/^v\.?/i, '');
     // GitHub swaps spaces in uploaded filenames for dots (e.g. "147 Setup 0.3.5.exe" ->
     // "147.Setup.0.3.5.exe"), so match either separator.
     const asset = (rel.assets || []).find((a) => /^147[ .]Setup[ .].*\.exe$/i.test(a.name));

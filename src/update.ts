@@ -68,8 +68,10 @@ function plugin(): UpdaterPlugin | null {
 
 /** "0.2.0" -> [0, 2, 0], comparing numerically part by part. */
 function isNewer(latest: string, current: string): boolean {
-  const a = latest.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
-  const b = current.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  // Tolerates a stray dot after the v (e.g. a tag typed as "v.0.3.8") — a typo
+  // is an easy way to end up here, and this shouldn't have to be re-tagged to fix.
+  const a = latest.replace(/^v\.?/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const b = current.replace(/^v\.?/i, '').split('.').map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const x = a[i] ?? 0;
     const y = b[i] ?? 0;
@@ -105,7 +107,7 @@ export async function checkForUpdate(): Promise<CheckResult> {
       return { ok: false, update: null, message: `GitHub said ${res.status} — no release found yet?` };
     }
     const rel = (await res.json()) as GhRelease;
-    const version = rel.tag_name.replace(/^v/i, '');
+    const version = rel.tag_name.replace(/^v\.?/i, '');
     const apk = rel.assets?.find((a) => a.name.toLowerCase().endsWith('.apk'));
 
     if (!isNewer(version, APP_VERSION)) {

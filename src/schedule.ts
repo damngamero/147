@@ -179,24 +179,39 @@ export async function syncSchedule(): Promise<void> {
     const graduated = !!ch?.fortnightlyFrom;
 
     // One 1-4-7 ladder per class — every topic in it comes up together.
+    //
+    // A class logged well after the fact (backdated past the whole ladder
+    // window) would otherwise dump all three overdue steps into Today at
+    // once. If nothing in the ladder exists yet and the class is already
+    // older than r7's offset, skip straight to "resolved" instead — the
+    // class jumps straight onto weekly (or fortnightly, if the chapter
+    // already qualifies) rather than making today re-litigate three blurts
+    // for something learned weeks ago.
+    const ladderIds = LADDER.map((step) => `b_${log.id}_${step.cycle}`);
+    const ladderIsFresh = ladderIds.every((id) => !blurtById(id));
+    const ladderWindowPassed = addDays(log.date, R147_OFFSETS.r7) < today;
+    const backdatedPastLadder = ladderIsFresh && ladderWindowPassed;
+
     for (const step of LADDER) {
       const id = `b_${log.id}_${step.cycle}`;
       const want = addDays(log.date, step.offset);
       const existing = blurtById(id);
       if (!existing) {
-        upsert(
-          p,
-          newBlurt({
-            id,
-            kind: 'class',
-            refId: log.id,
-            subjectId: log.subjectId,
-            chapterId: log.chapterId,
-            dueDate: want,
-            cycle: step.cycle,
-            seq: 0,
-          }),
-        );
+        const b = newBlurt({
+          id,
+          kind: 'class',
+          refId: log.id,
+          subjectId: log.subjectId,
+          chapterId: log.chapterId,
+          dueDate: want,
+          cycle: step.cycle,
+          seq: 0,
+        });
+        if (backdatedPastLadder) {
+          b.status = 'missed';
+          b.doneOn = today;
+        }
+        upsert(p, b);
       } else if (existing.status === 'due' && existing.dueDate !== want) {
         existing.dueDate = want; // the class date was edited
         upsert(p, existing);
@@ -305,6 +320,19 @@ export async function skipBlurt(id: ID): Promise<void> {
   b.status = 'missed';
   b.doneOn = todayISO();
   await db.put('blurts', b);
+  await syncSchedule();
+  emit();
+}
+
+/** Bulk version of skipBlurt for clearing a pile of carried-over blurts at once. */
+export async function skipAllLate(): Promise<void> {
+  const today = todayISO();
+  const late = dueBy(today).filter((b) => b.dueDate < today);
+  for (const b of late) {
+    b.status = 'missed';
+    b.doneOn = today;
+  }
+  await db.putMany('blurts', late);
   await syncSchedule();
   emit();
 }

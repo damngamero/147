@@ -75,4 +75,4 @@ if (existsSync(join(distDir, 'electron.exe'))) {
 rmSync(join(outDir, 'win-unpacked.tmp'), { recursive: true, force: true });
 
 execFileSync('npx', args, { cwd: root, stdio: 'inherit', shell: true });
-console.log(`\nInstaller and portable exe are in ${outDir}`);
+console.log(`\nInstaller is in ${outDir}`);
