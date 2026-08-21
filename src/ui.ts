@@ -2,6 +2,7 @@
  * Small DOM helpers. Deliberately avoids window.prompt/confirm — Electron does
  * not implement prompt(), and the Android WebView styles them badly.
  */
+import { esc } from './util';
 
 export function toast(msg: string, ms = 1800): void {
   const el = document.createElement('div');
@@ -21,10 +22,12 @@ interface ModalOpts {
 function shell(opts: ModalOpts, inner: string, danger = false): HTMLElement {
   const back = document.createElement('div');
   back.className = 'modal-back';
+  // title/body can contain user data (a topic or class name, say) that syncs in from
+  // another device — escape both so that never runs as HTML/script here.
   back.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true">
-      <div class="modal-title">${opts.title}</div>
-      ${opts.body ? `<p class="muted small">${opts.body}</p>` : ''}
+      <div class="modal-title">${esc(opts.title)}</div>
+      ${opts.body ? `<p class="muted small">${esc(opts.body)}</p>` : ''}
       ${inner}
       <div class="actions" style="margin-top:16px">
         <span class="spacer"></span>
@@ -41,11 +44,11 @@ export function askText(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const input = opts.multiline
-      ? `<textarea data-x="input">${opts.value ?? ''}</textarea>`
-      : `<input type="text" data-x="input" value="${(opts.value ?? '').replace(/"/g, '&quot;')}" />`;
+      ? `<textarea data-x="input">${esc(opts.value ?? '')}</textarea>`
+      : `<input type="text" data-x="input" value="${esc(opts.value ?? '')}" />`;
     const back = shell(
       opts,
-      `<div class="field">${opts.label ? `<label>${opts.label}</label>` : ''}${input}</div>`,
+      `<div class="field">${opts.label ? `<label>${esc(opts.label)}</label>` : ''}${input}</div>`,
     );
     const field = back.querySelector<HTMLInputElement>('[data-x="input"]')!;
     field.focus();

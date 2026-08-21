@@ -131,10 +131,10 @@ function gateText(finished: boolean, last: Topic | null, qualifies: boolean): st
   if (!finished) return 'needs: mark finished';
   if (!last) return 'needs: flag the last topic (or clear every class)';
   const log = classForTopic(last.id);
-  if (!log) return `waiting on ${last.name} to be logged in a class`;
+  if (!log) return `waiting on ${esc(last.name)} to be logged in a class`;
   return ladderResolved(log)
     ? 'ready — syncing'
-    : `waiting on the ${last.name} class to clear its 1-4-7`;
+    : `waiting on the ${esc(last.name)} class to clear its 1-4-7`;
 }
 
 export function wire(root: HTMLElement, id: string): void {
