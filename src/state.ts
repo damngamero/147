@@ -242,7 +242,10 @@ export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
     }
   }
 
-  const name = input.name?.trim() || undefined;
+  // Empty string, not undefined — Firestore's setDoc rejects undefined field
+  // values outright, which was silently failing sync for every account with
+  // even one blank-named class (i.e. everyone, since it's optional).
+  const name = input.name?.trim() ?? '';
 
   const existing = input.id ? logById(input.id) : undefined;
   if (existing) {

@@ -636,6 +636,22 @@ function newer(a: Record_ | undefined, b: Record_ | undefined): Record_ | undefi
   return (b.updatedAt ?? 0) > (a.updatedAt ?? 0) ? b : a;
 }
 
+/**
+ * Firestore's setDoc rejects any field valued `undefined` outright — IndexedDB
+ * (structured clone) happily stores it, so a record saved locally with an
+ * undefined optional field only ever explodes the moment it tries to sync.
+ * Stripping those keys here both fixes the write and self-heals the local
+ * copy (it gets written back below via putMany), so this clears up on its
+ * own the next time each device syncs — no per-device manual fix needed.
+ */
+function stripUndefined<T extends Record_>(obj: T): T {
+  const out = {} as T;
+  for (const k of Object.keys(obj) as (keyof T)[]) {
+    if (obj[k] !== undefined) out[k] = obj[k];
+  }
+  return out;
+}
+
 interface RemoteShape {
   items?: Record_[];
 }
@@ -707,7 +723,7 @@ export async function sync(): Promise<{ ok: boolean; message: string }> {
         if (t && t.at >= (rec.updatedAt ?? 0)) merged.delete(id);
       }
 
-      const items = [...merged.values()];
+      const items = [...merged.values()].map(stripUndefined);
       pushed += items.length;
 
       // Local mirror — touch=false so a pull does not read as a fresh local edit.
