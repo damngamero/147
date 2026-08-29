@@ -394,6 +394,32 @@ export async function snoozeBlurt(id: ID, days = 1): Promise<void> {
   emit();
 }
 
+/** Undoes an accidental snooze — pulls a still-open blurt's due date back to today. */
+export async function bringToToday(id: ID): Promise<void> {
+  const b = blurtById(id);
+  if (!b || b.status !== 'due') return;
+  b.dueDate = todayISO();
+  await db.put('blurts', b);
+  emit();
+}
+
+/** How long a push-to-tomorrow stays offered for recovery before it's treated as a normal,
+ *  legitimately-scheduled blurt instead of a fresh accidental snooze. */
+const RECENTLY_PUSHED_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Still-open blurts due tomorrow that were ALSO touched very recently — this is
+ * deliberately not "everything due tomorrow" (that's normal, every day) but a
+ * short-lived recovery list for something that just got bumped a moment ago,
+ * so the "bring to today" banner fades out on its own instead of showing up
+ * forever for perfectly ordinary next-day scheduling.
+ */
+export function recentlyPushedToTomorrow(): Blurt[] {
+  const t = addDays(todayISO(), 1);
+  const cutoff = Date.now() - RECENTLY_PUSHED_MS;
+  return openBlurts().filter((b) => b.dueDate === t && b.updatedAt >= cutoff);
+}
+
 /* ---------- weak spots ---------- */
 
 export interface TopicScore {
