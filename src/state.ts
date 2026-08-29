@@ -218,6 +218,8 @@ export interface ClassLogInput {
   date: ISODate;
   subjectId: ID;
   chapterId: ID;
+  /** Optional — falls back to the date when blank. */
+  name?: string;
   what: string;
   topicIds: ID[];
   /** names typed into the "topics covered" box that do not exist yet */
@@ -240,11 +242,14 @@ export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
     }
   }
 
+  const name = input.name?.trim() || undefined;
+
   const existing = input.id ? logById(input.id) : undefined;
   if (existing) {
     existing.date = input.date;
     existing.subjectId = input.subjectId;
     existing.chapterId = input.chapterId;
+    existing.name = name;
     existing.what = input.what;
     existing.topicIds = topicIds;
     await db.put('logs', existing);
@@ -257,6 +262,7 @@ export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
     date: input.date,
     subjectId: input.subjectId,
     chapterId: input.chapterId,
+    name,
     what: input.what,
     topicIds,
     createdAt: Date.now(),

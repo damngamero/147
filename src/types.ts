@@ -53,6 +53,8 @@ export interface ClassLog {
   date: ISODate;
   subjectId: ID;
   chapterId: ID;
+  /** Optional custom name — classes logged before this existed just fall back to their date. */
+  name?: string;
   /** free text: what the class covered / what I did */
   what: string;
   topicIds: ID[];

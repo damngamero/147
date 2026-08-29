@@ -15,18 +15,23 @@ import {
   topicsOf,
   updateTopic,
 } from '../state';
+import type { ClassLog } from '../types';
 import { askText, confirmBox, onAct, toast } from '../ui';
-import { esc, fmtDate, todayISO } from '../util';
+import { classLabel, esc, fmtDate, todayISO } from '../util';
 
 interface Draft {
   id: string;
   date: string;
+  name: string;
   subjectId: string;
   chapterId: string;
   what: string;
   topicIds: Set<string>;
   newTopicNames: string[];
 }
+
+/** Session-only, not persisted — searches by class name, topic name, or notes. */
+let historySearch = '';
 
 let draft: Draft | null = null;
 let draftKey = '';
@@ -38,6 +43,7 @@ function blankDraft(chapterId: string): Draft {
   return {
     id: '',
     date: todayISO(),
+    name: '',
     subjectId,
     chapterId: ch?.id ?? (subjectId ? (chaptersOf(subjectId)[0]?.id ?? '') : ''),
     what: '',
@@ -57,6 +63,7 @@ function ensureDraft(route: Route): Draft {
       draft = {
         id: l.id,
         date: l.date,
+        name: l.name ?? '',
         subjectId: l.subjectId,
         chapterId: l.chapterId,
         what: l.what,
@@ -124,6 +131,11 @@ function formHtml(d: Draft): string {
       </div>
 
       <div class="field">
+        <label>Class name (optional)</label>
+        <input type="text" data-f="name" value="${esc(d.name)}" placeholder="Leave blank to just use the date" />
+      </div>
+
+      <div class="field">
         <label>Subject</label>
         <select data-f="subjectId">${subjectOpts}</select>
       </div>
@@ -169,31 +181,61 @@ function formHtml(d: Draft): string {
     </div>`;
 }
 
-function historyHtml(): string {
-  const logs = recentLogs(40);
-  if (!logs.length) return '<div class="empty">Nothing logged yet.</div>';
-  return logs
-    .map((l) => {
-      const s = subjectById(l.subjectId);
-      const c = chapterById(l.chapterId);
-      const names = l.topicIds
-        .map((id) => topicById(id)?.name)
-        .filter(Boolean)
-        .map((n) => `<span class="pill">${esc(n!)}</span>`)
-        .join('');
-      return `
-      <a class="row" href="#/log/${l.id}" style="align-items:flex-start">
-        <span class="dot" style="background:${s?.color ?? '#666'};margin-top:6px"></span>
-        <span class="grow">
-          <div class="title">${fmtDate(l.date)} &middot; ${esc(s?.name ?? '?')} <span class="dim">/ ${esc(c?.name ?? '?')}</span></div>
-          <div class="sub">${l.what ? esc(l.what.slice(0, 120)) : '<span class="dim">no notes</span>'}</div>
-          ${names ? `<div class="chips">${names}</div>` : ''}
-        </span>
-        <button class="btn sm ghost danger" data-act="del-log" data-id="${l.id}"
-                title="Unlog this class">Unlog</button>
-        <span class="chev">&rsaquo;</span>
-      </a>`;
-    })
+/** Class name, its topics, and its notes — whatever you'd actually remember it by. */
+function matchesSearch(l: ClassLog, q: string): boolean {
+  if (!q) return true;
+  const hay = [
+    classLabel(l),
+    l.what,
+    ...l.topicIds.map((id) => topicById(id)?.name ?? ''),
+  ]
+    .join(' ')
+    .toLowerCase();
+  return hay.includes(q);
+}
+
+function logRowHtml(l: ClassLog): string {
+  const c = chapterById(l.chapterId);
+  const names = l.topicIds
+    .map((id) => topicById(id)?.name)
+    .filter(Boolean)
+    .map((n) => `<span class="pill">${esc(n!)}</span>`)
+    .join('');
+  return `
+    <a class="row" href="#/log/${l.id}" style="align-items:flex-start">
+      <span class="grow">
+        <div class="title">${esc(classLabel(l))} <span class="dim">&middot; ${fmtDate(l.date)}</span></div>
+        <div class="sub">
+          ${esc(c?.name ?? '?')}${l.what ? ` &middot; ${esc(l.what.slice(0, 90))}` : ''}
+        </div>
+        ${names ? `<div class="chips">${names}</div>` : ''}
+      </span>
+      <button class="btn sm ghost danger" data-act="del-log" data-id="${l.id}"
+              title="Unlog this class">Unlog</button>
+      <span class="chev">&rsaquo;</span>
+    </a>`;
+}
+
+/** Grouped by subject, most-recent class first within each group — searches by name/topic/notes. */
+function historyHtml(query: string): string {
+  const q = query.trim().toLowerCase();
+  const logs = store.logs.filter((l) => matchesSearch(l, q));
+  if (!logs.length) {
+    return `<div class="empty">${q ? 'No classes match that search.' : 'Nothing logged yet.'}</div>`;
+  }
+
+  const bySubject = new Map<string, ClassLog[]>();
+  for (const l of logs) {
+    if (!bySubject.has(l.subjectId)) bySubject.set(l.subjectId, []);
+    bySubject.get(l.subjectId)!.push(l);
+  }
+  for (const arr of bySubject.values()) {
+    arr.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  }
+
+  return store.subjects
+    .filter((s) => bySubject.has(s.id))
+    .map((s) => `<div class="daygroup">${esc(s.name)}</div>${bySubject.get(s.id)!.map(logRowHtml).join('')}`)
     .join('');
 }
 
@@ -210,7 +252,11 @@ export function render(route: Route): string {
     <h1>${d.id ? 'Edit class' : 'Log a class'}</h1>
     ${formHtml(d)}
     <h2>History</h2>
-    ${historyHtml()}`;
+    <div class="field">
+      <input type="text" data-f="history-search" value="${esc(historySearch)}"
+             placeholder="Search by class name, topic, or notes" />
+    </div>
+    <div data-history>${historyHtml(historySearch)}</div>`;
 }
 
 export function wire(root: HTMLElement, route: Route): void {
@@ -222,7 +268,13 @@ export function wire(root: HTMLElement, route: Route): void {
     const t = e.target as HTMLInputElement | HTMLTextAreaElement;
     const f = t.dataset.f;
     if (f === 'date') d.date = t.value;
+    if (f === 'name') d.name = t.value;
     if (f === 'what') d.what = t.value;
+    if (f === 'history-search') {
+      historySearch = t.value;
+      const box = root.querySelector<HTMLElement>('[data-history]');
+      if (box) box.innerHTML = historyHtml(historySearch);
+    }
     if (t.dataset.topic) {
       const on = (t as HTMLInputElement).checked;
       if (on) d.topicIds.add(t.dataset.topic);
@@ -367,6 +419,7 @@ export function wire(root: HTMLElement, route: Route): void {
       await saveClassLog({
         id: d.id || undefined,
         date: d.date,
+        name: d.name,
         subjectId: d.subjectId,
         chapterId: d.chapterId,
         what: d.what,

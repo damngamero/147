@@ -15,7 +15,7 @@ import {
 import { chapterQualifies, classForTopic, ladderProgress, ladderResolved } from '../schedule';
 import { askText, confirmBox, onAct, toast } from '../ui';
 import type { Topic } from '../types';
-import { esc, fmtDate } from '../util';
+import { classLabel, esc, fmtDate } from '../util';
 
 export function render(id: string): string {
   const c = chapterById(id);
@@ -51,7 +51,7 @@ export function render(id: string): string {
       return `
       <a class="row" href="#/log/${l.id}">
         <span class="grow">
-          <div class="title">${fmtDate(l.date)}</div>
+          <div class="title">${esc(classLabel(l))} <span class="dim">&middot; ${fmtDate(l.date)}</span></div>
           <div class="sub">${l.what ? esc(l.what.slice(0, 90)) : '<span class="dim">no notes</span>'}</div>
         </span>
         <span class="pill ${p.done === p.total ? 'good' : ''}">1-4-7 ${p.done}/${p.total}</span>

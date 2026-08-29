@@ -668,8 +668,12 @@ export function wire(root: HTMLElement): void {
     if (act === 'import') root.querySelector<HTMLInputElement>('[data-f="file"]')?.click();
 
     if (act === 'refresh-ladders') {
-      await refreshLadders();
-      toast('Schedule refreshed');
+      try {
+        await refreshLadders();
+        toast('Schedule refreshed');
+      } catch (err) {
+        toast(`Refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
       rerender();
     }
 

@@ -39,6 +39,12 @@ export function fmtDate(iso: ISODate): string {
   return `${WD[d.getDay()]} ${d.getDate()} ${MO[d.getMonth()]}`;
 }
 
+/** A class's display name — its custom name if it has one, else its date. Classes
+ *  logged before names existed just keep showing the date they always have. */
+export function classLabel(l: { name?: string; date: ISODate }): string {
+  return l.name?.trim() ? l.name.trim() : fmtDate(l.date);
+}
+
 export function relDay(iso: ISODate): string {
   const n = daysBetween(todayISO(), iso);
   if (n === 0) return 'today';
