@@ -33,6 +33,9 @@ interface Draft {
 /** Session-only, not persisted — searches by class name, topic name, or notes. */
 let historySearch = '';
 
+/** Collapsed by default — subject groups can get long. A search auto-expands everything. */
+let expandedSubjects = new Set<string>();
+
 let draft: Draft | null = null;
 let draftKey = '';
 
@@ -216,7 +219,9 @@ function logRowHtml(l: ClassLog): string {
     </a>`;
 }
 
-/** Grouped by subject, most-recent class first within each group — searches by name/topic/notes. */
+/** Grouped by subject, most-recent class first within each group — searches by name/topic/notes.
+ *  Collapsed by default so a subject with a long history doesn't push everything else down the
+ *  page; a search forces every matching group open so results are never hidden. */
 function historyHtml(query: string): string {
   const q = query.trim().toLowerCase();
   const logs = store.logs.filter((l) => matchesSearch(l, q));
@@ -235,7 +240,16 @@ function historyHtml(query: string): string {
 
   return store.subjects
     .filter((s) => bySubject.has(s.id))
-    .map((s) => `<div class="daygroup">${esc(s.name)}</div>${bySubject.get(s.id)!.map(logRowHtml).join('')}`)
+    .map((s) => {
+      const group = bySubject.get(s.id)!;
+      const open = !!q || expandedSubjects.has(s.id);
+      return `
+      <div class="daygroup" data-act="toggle-subject" data-id="${s.id}" style="cursor:pointer">
+        <span class="dim">${open ? '&#9662;' : '&#9656;'}</span> ${esc(s.name)}
+        <span class="dim">(${group.length})</span>
+      </div>
+      ${open ? group.map(logRowHtml).join('') : ''}`;
+    })
     .join('');
 }
 
@@ -333,6 +347,15 @@ export function wire(root: HTMLElement, route: Route): void {
   });
 
   onAct(root, async (act, el, ev) => {
+    if (act === 'toggle-subject') {
+      const sid = el.dataset.id!;
+      if (expandedSubjects.has(sid)) expandedSubjects.delete(sid);
+      else expandedSubjects.add(sid);
+      const box = root.querySelector<HTMLElement>('[data-history]');
+      if (box) box.innerHTML = historyHtml(historySearch);
+      return;
+    }
+
     if (act === 'del-log') {
       ev.preventDefault();
       ev.stopPropagation();
