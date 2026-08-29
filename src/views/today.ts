@@ -1,5 +1,5 @@
 import { rerender } from '../app';
-import { doneOnDate, dueBy, reopenBlurt, skipAllLate, skipBlurt, snoozeBlurt } from '../schedule';
+import { doneOnDate, dueBy, reopenBlurt, skipAllLate, skipBlurt } from '../schedule';
 import { store } from '../state';
 import { confirmBox, onAct, toast } from '../ui';
 import { fmtDate, todayISO } from '../util';
@@ -89,14 +89,17 @@ export function wire(root: HTMLElement): void {
       }
     }
     if (act === 'menu') {
+      // Dismissing this any way (Cancel, tapping outside, back gesture) does
+      // nothing and leaves the blurt exactly as it was — it used to silently
+      // push it to tomorrow on anything but an explicit "Skip it", which read
+      // as blurts vanishing off Today for no reason.
       const skip = await confirmBox({
-        title: 'Not doing this one?',
-        body: 'OK skips it for good — it still counts as cleared so the ladder keeps moving. Cancel pushes it to tomorrow instead.',
+        title: 'Skip this one?',
+        body: 'Counts it as cleared so the ladder keeps moving. Closing this without picking Skip leaves it untouched, still due today.',
         okLabel: 'Skip it',
         danger: true,
       });
       if (skip) await skipBlurt(id);
-      else await snoozeBlurt(id, 1);
     }
   });
 }
