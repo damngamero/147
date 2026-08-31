@@ -62,8 +62,14 @@ export function relDay(iso: ISODate): string {
  * late slides everything after it, which is the whole point of chaining.
  */
 export const R147_GAPS = { r1: 1, r4: 4, r7: 7 } as const;
-export const WEEKLY_GAP = 7;
-export const FORTNIGHTLY_GAP = 14;
+/**
+ * Once a class has cleared its 1-4-7 it repeats on this gap, and a graduated
+ * chapter repeats on the longer one. Both counted from the last time that
+ * blurt was actually resolved, not from a fixed calendar slot — the cycle
+ * ids are still called 'weekly'/'fortnightly' in stored data for continuity.
+ */
+export const CLASS_REPEAT_GAP = 14;
+export const CHAPTER_REPEAT_GAP = 21;
 
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

@@ -1,7 +1,7 @@
 import * as db from './db';
 import { chapterById, emit, logsOf, store, topicsOf } from './state';
 import type { Blurt, BlurtCycle, Chapter, ClassLog, ID, ISODate, Topic } from './types';
-import { FORTNIGHTLY_GAP, R147_GAPS, WEEKLY_GAP, addDays, todayISO } from './util';
+import { CHAPTER_REPEAT_GAP, CLASS_REPEAT_GAP, R147_GAPS, addDays, todayISO } from './util';
 
 const LADDER_CYCLES: Array<Extract<BlurtCycle, 'r1' | 'r4' | 'r7'>> = ['r1', 'r4', 'r7'];
 
@@ -9,16 +9,16 @@ export const CYCLE_LABEL: Record<BlurtCycle, string> = {
   r1: 'blurt 1',
   r4: 'blurt 2',
   r7: 'blurt 3',
-  weekly: 'weekly',
-  fortnightly: 'fortnightly',
+  weekly: 'every 2 weeks',
+  fortnightly: 'every 3 weeks',
 };
 
 export const CYCLE_SHORT: Record<BlurtCycle, string> = {
   r1: '1',
   r4: '4',
   r7: '7',
-  weekly: 'wk',
-  fortnightly: '2wk',
+  weekly: '2wk',
+  fortnightly: '3wk',
 };
 
 /* ---------- queries ---------- */
@@ -260,7 +260,7 @@ export async function syncSchedule(): Promise<void> {
             refId: log.id,
             subjectId: log.subjectId,
             chapterId: log.chapterId,
-            dueDate: addDays(base, WEEKLY_GAP),
+            dueDate: addDays(base, CLASS_REPEAT_GAP),
             cycle: 'weekly',
             seq,
           }),
@@ -284,7 +284,7 @@ export async function syncSchedule(): Promise<void> {
         refId: ch.id,
         subjectId: ch.subjectId,
         chapterId: ch.id,
-        dueDate: addDays(base, FORTNIGHTLY_GAP),
+        dueDate: addDays(base, CHAPTER_REPEAT_GAP),
         cycle: 'fortnightly',
         seq,
       }),
@@ -301,14 +301,17 @@ export async function syncSchedule(): Promise<void> {
 }
 
 /**
- * Drops every still-open (not yet resolved) r4/r7 blurt and reruns the sync
- * so they regenerate under the current chaining rules — a manual fix-up for
- * blurts scheduled before a scheduling-logic change, without touching
- * anything already resolved (history and scores stay put).
+ * Drops every still-open (not yet resolved) blurt that gets *derived* from an
+ * earlier one — the chained r4/r7 steps and the recurring class/chapter
+ * repeats — and reruns the sync so they regenerate under the current gaps and
+ * chaining rules. This is the manual fix-up for blurts that were scheduled
+ * before a timing change: without it, anything already on the calendar keeps
+ * its old date forever and only new ones pick up the new spacing. Nothing
+ * already resolved is touched, so history and scores stay put.
  */
 export async function refreshLadders(): Promise<void> {
   const stale = store.blurts.filter(
-    (b) => b.status === 'due' && (b.cycle === 'r4' || b.cycle === 'r7'),
+    (b) => b.status === 'due' && b.cycle !== 'r1',
   );
   const ids = stale.map((b) => b.id);
   store.blurts = store.blurts.filter((b) => !ids.includes(b.id));

@@ -8,6 +8,25 @@ import { blurtRow, labelFor, section } from './parts';
 /** Only relevant once a pile of overdue stuff shows up — a fresh backdated class or two. */
 const SKIP_ALL_THRESHOLD = 10;
 
+/**
+ * Most blurts to put in front of you in one day. Everything still due stays
+ * due — this only caps how much the page asks of you at once, so a backlog
+ * doesn't turn into an unbounded wall. Clear the batch and it offers you the
+ * next one rather than silently topping the list back up to ten.
+ */
+const DAILY_CAP = 10;
+
+/** Extra batches unlocked by hand today, keyed by date so tomorrow starts clean. */
+function extraKey(date: string): string {
+  return `147_extra_${date}`;
+}
+function extraToday(date: string): number {
+  return Number(localStorage.getItem(extraKey(date)) ?? 0) || 0;
+}
+function unlockMore(date: string): void {
+  localStorage.setItem(extraKey(date), String(extraToday(date) + DAILY_CAP));
+}
+
 /** Persists only for this tab session — not worth saving, it's a "get it out of my face" toggle. */
 let hideCleared = false;
 
@@ -20,6 +39,12 @@ export function render(): string {
   const late = due.filter((b) => b.dueDate < today);
   const doneToday = doneOnDate(today);
   const pushed = recentlyPushedToTomorrow();
+
+  // Everything cleared today counts against the cap, so the list shrinks as you
+  // work rather than refilling itself back up to ten from the backlog.
+  const allowance = Math.max(0, DAILY_CAP + extraToday(today) - doneToday.length);
+  const visible = due.slice(0, allowance);
+  const heldBack = due.length - visible.length;
 
   return `
     <h1>${fmtDate(today)}</h1>
@@ -54,15 +79,35 @@ export function render(): string {
 
     ${section(
       'Today',
-      due.length,
-      due.length
-        ? due.map((b) => blurtRow(b)).join('')
+      visible.length,
+      visible.length
+        ? visible.map((b) => blurtRow(b)).join('')
         : `<div class="empty">${
-            store.blurts.length
-              ? 'Nothing to blurt today. Enjoy it.'
-              : 'Log a class and the 1-4-7 blurts appear here.'
+            !store.blurts.length
+              ? 'Log a class and the 1-4-7 blurts appear here.'
+              : heldBack
+                ? `That's ${doneToday.length} done today — the cap for one sitting.`
+                : 'Nothing to blurt today. Enjoy it.'
           }</div>`,
     )}
+
+    ${
+      heldBack
+        ? `<div class="card">
+             <div class="setting-row" style="padding-top:0">
+               <span class="grow">
+                 <div class="title">${heldBack} more still due today</div>
+                 <div class="sub">
+                   Held back so today stays finishable. They keep until you want them — nothing is lost.
+                 </div>
+               </span>
+               <button class="btn ${visible.length ? 'ghost' : 'primary'}" data-act="unlock-more">
+                 Show ${Math.min(DAILY_CAP, heldBack)} more
+               </button>
+             </div>
+           </div>`
+        : ''
+    }
 
     ${
       doneToday.length
@@ -88,6 +133,10 @@ export function wire(root: HTMLElement): void {
     if (act === 'reopen') await reopenBlurt(id);
     if (act === 'toggle-cleared') {
       hideCleared = !hideCleared;
+      rerender();
+    }
+    if (act === 'unlock-more') {
+      unlockMore(today);
       rerender();
     }
     if (act === 'bring-all-today') {
