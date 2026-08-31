@@ -1,6 +1,6 @@
 # 147
 
-Class log → topics → automatic 1-4-7 blurt schedule → weekly → fortnightly.
+Class log → topics → automatic 1-4-7 blurt schedule → every 2 weeks → every 3 weeks.
 
 Vite + vanilla TypeScript + IndexedDB. No framework, no server, no account, no internet.
 One codebase ships three ways: browser, a Windows `.exe` (Electron) and an Android `.apk`
@@ -34,22 +34,28 @@ three independent deadlines.
 | 2     | +4 days from blurt 1's completion    | 19th |
 | 3     | +7 days from blurt 2's completion    | 26th |
 
-**After the ladder** — a class that has cleared all three goes onto a **weekly** blurt, anchored
-to the day the last one was actually done.
+**After the ladder** — a class that has cleared all three repeats **every 2 weeks**, anchored to
+the day the last one was actually done. Longer than it sounds on purpose: every class you log
+adds another recurring blurt forever, so a short repeat gap means the daily load climbs without
+limit as the term goes on.
 
 **Only today** — the Today tab shows what is due today and nothing else. A blurt that is not due
 yet cannot be opened at all; blurting early throws away the gap that makes spacing work.
+
+**Ten a day, then it asks** — Today puts at most ten blurts in front of you at once. Anything
+past that is held back, not lost, and once the batch is cleared it offers the next ten rather
+than quietly refilling the list. A backlog should be finishable, not a wall.
 
 **Weak spots** — the 1-5 ratings per topic are the only input the app wants back, and the Weak
 spots tab ranks every topic worst-first from them.
 
 **Chapter graduation** — when the chapter is marked *finished* **and** its flagged *last topic*
-has cleared its 1-4-7, the chapter goes onto a **fortnightly** blurt, and the per-class weekly
-blurts in that chapter stop. One fortnightly chapter blurt replaces them. Un-tick *finished* and
+has cleared its 1-4-7, the chapter repeats **every 3 weeks**, and the per-class repeats in that
+chapter stop. One chapter blurt replaces all of them. Un-tick *finished* and
 everything reverts. With no last topic flagged, the fallback trigger is every topic having cleared.
 
 A topic still mid-ladder inside a graduated chapter keeps its remaining 1-4-7 blurts — it just
-never gets a weekly one, it drops straight into the chapter blurt when it clears.
+never gets a per-class repeat, it drops straight into the chapter blurt when it clears.
 
 Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 
@@ -166,6 +172,11 @@ service cloud.firestore {
 The config is stored in `localStorage`, not compiled in, so the same `.exe`/`.apk` works against
 any project without a rebuild — `VITE_FIREBASE_CONFIG` at build time is just the default.
 
+One Firestore quirk worth knowing if you extend the data model: `setDoc` rejects any field whose
+value is `undefined`, while IndexedDB stores it happily. A new optional field that is left blank
+will therefore save fine locally and then fail *every* sync until it is stripped — `sync()` drops
+undefined keys on the way out for exactly this reason.
+
 **Adding a second device** — the first (already-synced) device shows a permanent six-digit
 **sync token** right in Settings → Cloud sync, mapping to that device's `accountKey` in Firestore.
 It never expires — generated once per account, reused for every future device. On the second
@@ -220,7 +231,7 @@ phone app — there is no sync.
    last-topic flag, chapter-finished flag, day log, IndexedDB, hash routing, dark UI.
 2. **DONE** — the scheduler: 1-4-7 generation, Today queue with overdue/due/cleared, tick done,
    skip, push to tomorrow, day rollover handling.
-3. **DONE** — stage transitions: topic → weekly, chapter → fortnightly, weekly retirement,
+3. **DONE** — stage transitions: class → recurring, chapter → longer recurring, retirement,
    reversal when *finished* is un-ticked, gate status shown on the chapter page.
 4. **DONE** — blurt session screen: write it out, reveal the class notes to check against,
    1-5 self score, per-topic history.
@@ -266,6 +277,10 @@ phone app — there is no sync.
     for the cleared-today list; the 1-4-7 ladder chains off each blurt's actual completion instead
     of fixed offsets from the class date; a manual "refresh blurt schedule" button in Settings to
     rebuild open ladder steps under the current rules without touching anything already resolved.
+22. **DONE** — the repeat gaps got much longer (class 7 → 14 days, chapter 14 → 21) and Today
+    caps itself at ten blurts a batch. Both fix the same thing: every class logged adds a
+    permanent recurring blurt, so the old cadence made the daily load grow without bound as the
+    term went on.
 
 ## Layout
 
@@ -274,7 +289,7 @@ phone app — there is no sync.
 | `src/types.ts`          | data shapes (Subject, Chapter, Topic, ClassLog, Blurt, DayLog)  |
 | `src/db.ts`             | IndexedDB stores + load/put/delete/clear                        |
 | `src/state.ts`          | in-memory store, all mutations, write-through to IndexedDB      |
-| `src/schedule.ts`       | **the 1-4-7 / weekly / fortnightly engine** — `syncSchedule()`  |
+| `src/schedule.ts`       | **the 1-4-7 / 2-week / 3-week engine** — `syncSchedule()`        |
 | `src/notify.ts`         | reminders (web + Android) and the widget payload bridge         |
 | `src/backup.ts`         | JSON export/import, native file saving                          |
 | `src/cloud.ts`          | Firebase config, anonymous auth, permanent sync token + device cap, last-write-wins merge |
@@ -283,7 +298,7 @@ phone app — there is no sync.
 | `src/updateBanner.ts`   | background update check + Restart now/Later banner              |
 | `src/pulltorefresh.ts`  | pull-to-refresh gesture, forces an immediate sync                |
 | `src/swipeNav.ts`       | swipe left/right between the four main tabs (touch only)         |
-| `src/util.ts`           | local-time date maths, `R147_GAPS`, ids, escaping                |
+| `src/util.ts`           | local-time date maths, `R147_GAPS`, repeat gaps, ids, escaping    |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |
 | `src/views/*.ts`        | today, log, plan, blurt, subjects, subject, chapter, parts      |
