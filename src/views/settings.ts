@@ -353,9 +353,10 @@ export function render(): string {
     <h2>Schedule</h2>
     <div class="card">
       <p class="muted small">
-        Rebuilds every not-yet-done blurt 2 and blurt 3 from scratch, in case a scheduling fix
-        needs to reach classes that were already logged. Anything already done or skipped is left
-        alone — this can't lose history.
+        Rebuilds every not-yet-done blurt that follows from an earlier one — blurt 2, blurt 3,
+        and the recurring class and chapter repeats — so a change to the spacing reaches work
+        that was already on the calendar instead of only new classes. Anything already done or
+        skipped is left alone, so this can't lose history.
       </p>
       <div class="actions">
         <button class="btn ghost" data-act="refresh-ladders">Refresh blurt schedule</button>
