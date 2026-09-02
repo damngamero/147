@@ -1,5 +1,5 @@
 import { rerender } from '../app';
-import { doneOnDate, dueBy, reopenBlurt, skipAllLate, skipBlurt } from '../schedule';
+import { doneOnDate, drillsToday, dueBy, reopenBlurt, skipAllLate, skipBlurt } from '../schedule';
 import { store } from '../state';
 import { confirmBox, onAct, toast } from '../ui';
 import { fmtDate, todayISO } from '../util';
@@ -35,13 +35,19 @@ export function render(): string {
 
   // Only ever today's work. Nothing scheduled for a future date is shown or
   // reachable — blurting early throws away the gap that makes 1-4-7 work.
-  const due = dueBy(today);
+  // The drill sits outside the cap on purpose: it is a fixed few items a day,
+  // and the whole point is that it cannot get crowded out by a heavy queue.
+  const drills = drillsToday();
+  const drillOpen = drills.filter((b) => b.status === 'due');
+
+  const due = dueBy(today).filter((b) => b.kind !== 'topic');
   const late = due.filter((b) => b.dueDate < today);
   const doneToday = doneOnDate(today);
+  const doneBlurts = doneToday.filter((b) => b.kind !== 'topic');
 
   // Everything cleared today counts against the cap, so the list shrinks as you
   // work rather than refilling itself back up to ten from the backlog.
-  const allowance = Math.max(0, DAILY_CAP + extraToday(today) - doneToday.length);
+  const allowance = Math.max(0, DAILY_CAP + extraToday(today) - doneBlurts.length);
   const visible = due.slice(0, allowance);
   const heldBack = due.length - visible.length;
 
@@ -53,6 +59,18 @@ export function render(): string {
       <div class="stat ${late.length ? 'bad' : ''}"><div class="n">${late.length}</div><div class="k">Carried over</div></div>
       <div class="stat ${doneToday.length ? 'good' : ''}"><div class="n">${doneToday.length}</div><div class="k">Cleared</div></div>
     </div>
+
+    ${
+      drills.length
+        ? section(
+            'Practice',
+            drillOpen.length,
+            drillOpen.length
+              ? drillOpen.map((b) => blurtRow(b)).join('')
+              : '<div class="empty">Practice done for today.</div>',
+          )
+        : ''
+    }
 
     ${
       late.length > SKIP_ALL_THRESHOLD
@@ -71,7 +89,7 @@ export function render(): string {
             !store.blurts.length
               ? 'Log a class and the 1-4-7 blurts appear here.'
               : heldBack
-                ? `That's ${doneToday.length} done today — the cap for one sitting.`
+                ? `That's ${doneBlurts.length} done today — the cap for one sitting.`
                 : 'Nothing to blurt today. Enjoy it.'
           }</div>`,
     )}

@@ -13,6 +13,14 @@ export interface BlurtLabel {
 export function labelFor(b: Blurt): BlurtLabel {
   const s = subjectById(b.subjectId);
   const c = chapterById(b.chapterId);
+  if (b.kind === 'topic') {
+    const [t] = topicsForBlurt(b);
+    return {
+      title: t?.name ?? '(deleted topic)',
+      sub: `${s?.name ?? '?'} · ${c?.name ?? '?'} · practice`,
+      color: s?.color ?? '#666',
+    };
+  }
   if (b.kind === 'chapter') {
     return {
       title: c?.name ?? '(deleted chapter)',
@@ -59,7 +67,7 @@ export function blurtRow(b: Blurt, mode: 'open' | 'done' = 'open'): string {
       ? `<button class="btn sm ghost" data-act="reopen" data-id="${b.id}">Undo</button>`
       : `
         <button class="btn sm primary" data-act="open" data-id="${b.id}">${
-          methodOf(b) === 'questions' ? 'Do it' : 'Blurt it'
+          b.kind === 'topic' ? 'Practise' : methodOf(b) === 'questions' ? 'Do it' : 'Blurt it'
         }</button>
         <button class="btn sm ghost" data-act="menu" data-id="${b.id}" title="More">&hellip;</button>`;
 
