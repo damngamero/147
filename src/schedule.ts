@@ -1,7 +1,17 @@
 import * as db from './db';
-import { chapterById, emit, logsOf, store, topicsOf } from './state';
+import { chapterById, emit, logsOf, store, subjectById, topicById, topicsOf } from './state';
 import type { Blurt, BlurtCycle, Chapter, ClassLog, ID, ISODate, Topic } from './types';
-import { CHAPTER_REPEAT_GAP, CLASS_REPEAT_GAP, R147_GAPS, addDays, todayISO } from './util';
+import {
+  CHAPTER_REPEAT_GAP,
+  CLASS_REPEAT_GAP,
+  DRILL_COOLDOWN_DAYS,
+  DRILL_PER_DAY,
+  R147_GAPS,
+  addDays,
+  attemptsToScore,
+  daysBetween,
+  todayISO,
+} from './util';
 
 const LADDER_CYCLES: Array<Extract<BlurtCycle, 'r1' | 'r4' | 'r7'>> = ['r1', 'r4', 'r7'];
 
@@ -11,6 +21,7 @@ export const CYCLE_LABEL: Record<BlurtCycle, string> = {
   r7: 'blurt 3',
   weekly: 'every 2 weeks',
   fortnightly: 'every 3 weeks',
+  daily: 'daily practice',
 };
 
 export const CYCLE_SHORT: Record<BlurtCycle, string> = {
@@ -19,13 +30,14 @@ export const CYCLE_SHORT: Record<BlurtCycle, string> = {
   r7: '7',
   weekly: '2wk',
   fortnightly: '3wk',
+  daily: 'day',
 };
 
 /* ---------- queries ---------- */
 
 export const blurtById = (id: ID) => store.blurts.find((b) => b.id === id);
 
-export const blurtsFor = (kind: 'class' | 'chapter', refId: ID) =>
+export const blurtsFor = (kind: Blurt['kind'], refId: ID) =>
   store.blurts.filter((b) => b.kind === kind && b.refId === refId);
 
 const isResolved = (b: Blurt) => b.status === 'done' || b.status === 'missed';
@@ -79,6 +91,66 @@ export function classForTopic(topicId: ID): ClassLog | undefined {
 function lastResolvedDate(blurts: Blurt[]): ISODate | null {
   const dates = blurts.filter(isResolved).map((b) => b.doneOn ?? b.dueDate);
   return dates.length ? dates.sort().at(-1)! : null;
+}
+
+/* ---------- daily drill (practice subjects) ---------- */
+
+/** True for a subject that practises daily instead of blurting — maths, typically. */
+export function isDrillSubject(subjectId: ID): boolean {
+  return subjectById(subjectId)?.drill === true;
+}
+
+/** Today's drill items, as rows for the Today page. */
+export function drillsToday(): Blurt[] {
+  const today = todayISO();
+  return store.blurts.filter((b) => b.kind === 'topic' && b.dueDate === today);
+}
+
+/** The last day a topic was actually drilled, so the picker can rotate off it. */
+function lastDrilledOn(topicId: ID): ISODate | null {
+  const days = store.blurts
+    .filter((b) => b.kind === 'topic' && b.refId === topicId && isResolved(b))
+    .map((b) => b.doneOn ?? b.dueDate);
+  return days.length ? days.sort().at(-1)! : null;
+}
+
+/**
+ * Picks the topics for one day's drill: weakest first, but rotating off
+ * anything practised in the last couple of days so the same three don't lock
+ * in forever. An unrated topic counts as the weakest there is — it has never
+ * been shown to be solid. Only topics actually taught in a logged class are
+ * eligible; a topic nobody has covered yet has nothing to practise.
+ */
+function pickDrillTopics(today: ISODate): Topic[] {
+  const eligible = store.topics.filter(
+    (t) => isDrillSubject(t.subjectId) && !!classForTopic(t.id),
+  );
+  if (!eligible.length) return [];
+
+  const latest = new Map(topicScores().map((s) => [s.topic.id, s.latest]));
+  const rank = (t: Topic) => {
+    const drilled = lastDrilledOn(t.id);
+    return {
+      weakness: latest.get(t.id) ?? 0,
+      staleness: drilled ? daysBetween(drilled, today) : Number.MAX_SAFE_INTEGER,
+      drilled,
+    };
+  };
+
+  // Prefer topics off cooldown; fall back to the whole set when there aren't enough.
+  const fresh = eligible.filter((t) => {
+    const d = lastDrilledOn(t.id);
+    return !d || daysBetween(d, today) >= DRILL_COOLDOWN_DAYS;
+  });
+  const pool = fresh.length >= DRILL_PER_DAY ? fresh : eligible;
+
+  return [...pool]
+    .sort((a, b) => {
+      const ra = rank(a);
+      const rb = rank(b);
+      return ra.weakness - rb.weakness || rb.staleness - ra.staleness;
+    })
+    .slice(0, DRILL_PER_DAY);
 }
 
 /* ---------- the graduation test ---------- */
@@ -143,14 +215,30 @@ export async function syncSchedule(): Promise<void> {
   const p: Pending = { blurts: new Map(), removed: new Set(), chapters: new Set() };
   const today = todayISO();
 
-  // Blurts left over from the old per-topic model, or from a deleted class.
+  // Blurts whose class, chapter or topic no longer exists.
   const liveRefs = new Set([
     ...store.logs.map((l) => l.id),
     ...store.chapters.map((c) => c.id),
+    ...store.topics.map((t) => t.id),
   ]);
   for (const b of [...store.blurts]) {
-    const legacy = b.kind !== 'class' && b.kind !== 'chapter';
+    const legacy = b.kind !== 'class' && b.kind !== 'chapter' && b.kind !== 'topic';
     if (legacy || !liveRefs.has(b.refId)) drop(p, b.id);
+  }
+
+  // A drill subject schedules no class or chapter blurts at all — practice
+  // replaces them outright. Anything still open from before the toggle went on
+  // is cleared out; anything already done or skipped stays as history.
+  for (const b of [...store.blurts]) {
+    if (b.kind === 'topic' || b.status !== 'due') continue;
+    if (isDrillSubject(b.subjectId)) drop(p, b.id);
+  }
+
+  // Yesterday's unfinished drill does not carry over. Daily practice is a habit,
+  // not a debt — letting misses pile up recreates exactly the backlog this is
+  // meant to avoid.
+  for (const b of [...store.blurts]) {
+    if (b.kind === 'topic' && b.status === 'due' && b.dueDate !== today) drop(p, b.id);
   }
 
   // Chapters first: a graduated chapter changes what its classes may schedule.
@@ -171,6 +259,7 @@ export async function syncSchedule(): Promise<void> {
   }
 
   for (const log of store.logs) {
+    if (isDrillSubject(log.subjectId)) continue;
     const ch = chapterById(log.chapterId);
     const graduated = !!ch?.fortnightlyFrom;
 
@@ -271,7 +360,7 @@ export async function syncSchedule(): Promise<void> {
 
   // Fortnightly chapter blurts.
   for (const ch of store.chapters) {
-    if (!ch.fortnightlyFrom) continue;
+    if (!ch.fortnightlyFrom || isDrillSubject(ch.subjectId)) continue;
     const mine = blurtsFor('chapter', ch.id);
     if (mine.some((b) => b.status === 'due')) continue;
     const base = lastResolvedDate(mine) ?? ch.fortnightlyFrom;
@@ -287,6 +376,26 @@ export async function syncSchedule(): Promise<void> {
         dueDate: addDays(base, CHAPTER_REPEAT_GAP),
         cycle: 'fortnightly',
         seq,
+      }),
+    );
+  }
+
+  // Today's drill: one row per picked topic, deterministic id so this stays
+  // idempotent and two devices generating the same day agree on the ids.
+  for (const t of pickDrillTopics(today)) {
+    const id = `b_daily_${today}_${t.id}`;
+    if (blurtById(id)) continue;
+    upsert(
+      p,
+      newBlurt({
+        id,
+        kind: 'topic',
+        refId: t.id,
+        subjectId: t.subjectId,
+        chapterId: t.chapterId,
+        dueDate: today,
+        cycle: 'daily',
+        seq: 0,
       }),
     );
   }
@@ -324,6 +433,10 @@ export async function refreshLadders(): Promise<void> {
 
 /** The topics a blurt asks you to recall. */
 export function topicsForBlurt(b: Blurt): Topic[] {
+  if (b.kind === 'topic') {
+    const t = topicById(b.refId);
+    return t ? [t] : [];
+  }
   if (b.kind === 'chapter') return topicsOf(b.refId);
   const log = store.logs.find((l) => l.id === b.refId);
   if (!log) return [];
@@ -350,6 +463,31 @@ export async function completeBlurt(
   b.doneOn = todayISO();
   b.scores = scores;
   b.score = average(scores);
+  await db.put('blurts', b);
+  await syncSchedule();
+  emit();
+}
+
+/**
+ * Finishes a drill: how many questions were worked, and how many attempts they
+ * generally took. The attempts land on the same 1-5 scale everything else uses
+ * so maths topics rank in the one Weak spots list, while the raw count is kept
+ * for the topic's own history.
+ */
+export async function completeDrill(
+  id: ID,
+  questionsDone: number,
+  attempts: number,
+): Promise<void> {
+  const b = blurtById(id);
+  if (!b || !isActionable(b)) return;
+  const score = attemptsToScore(attempts);
+  b.status = 'done';
+  b.doneOn = todayISO();
+  b.questionsDone = questionsDone;
+  b.attempts = attempts;
+  b.scores = { [b.refId]: score };
+  b.score = score;
   await db.put('blurts', b);
   await syncSchedule();
   emit();
