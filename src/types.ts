@@ -7,6 +7,12 @@ export interface Subject {
   id: ID;
   name: string;
   color: string;
+  /**
+   * Practise daily instead of blurting. Maths does not survive a four-day gap
+   * the way recall subjects do, so a subject with this on schedules NO class
+   * or chapter blurts at all — its topics come up in the daily drill instead.
+   */
+  drill?: boolean;
   createdAt: number;
   updatedAt: number;
   archived: boolean;
@@ -62,17 +68,18 @@ export interface ClassLog {
   updatedAt: number;
 }
 
-export type BlurtCycle = 'r1' | 'r4' | 'r7' | 'weekly' | 'fortnightly';
+export type BlurtCycle = 'r1' | 'r4' | 'r7' | 'weekly' | 'fortnightly' | 'daily';
 export type BlurtStatus = 'due' | 'done' | 'missed' | 'cancelled';
 
 export interface Blurt {
   id: ID;
   /**
    * A blurt covers a whole class at once — every topic taught in it, together —
-   * or, once a chapter has graduated, the whole chapter.
+   * or, once a chapter has graduated, the whole chapter. 'topic' is the odd one
+   * out: a single topic in a drill subject, generated fresh each day.
    */
-  kind: 'class' | 'chapter';
-  /** classLog id when kind==='class', chapterId when kind==='chapter' */
+  kind: 'class' | 'chapter' | 'topic';
+  /** classLog id when kind==='class', chapterId when 'chapter', topicId when 'topic' */
   refId: ID;
   subjectId: ID;
   chapterId: ID;
@@ -86,6 +93,10 @@ export interface Blurt {
   score: number | null;
   /** topicId -> 1-5 self rating. This is what the weak-spot list is built from. */
   scores: Record<ID, number>;
+  /** Drills only: how many questions were worked on this topic. */
+  questionsDone?: number;
+  /** Drills only: attempts it generally took — 1-4, where 4 means 4+, and 0 means never got it. */
+  attempts?: number;
   createdAt: number;
   updatedAt: number;
 }

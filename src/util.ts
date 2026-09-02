@@ -71,6 +71,24 @@ export const R147_GAPS = { r1: 1, r4: 4, r7: 7 } as const;
 export const CLASS_REPEAT_GAP = 14;
 export const CHAPTER_REPEAT_GAP = 21;
 
+/**
+ * A drill subject (maths) puts this many separate topics in front of you every
+ * day, and won't offer a topic again for COOLDOWN days unless there aren't
+ * enough others to fill the slots. Small on purpose: three questions a day is
+ * a habit that survives, thirty is one that doesn't.
+ */
+export const DRILL_PER_DAY = 3;
+export const DRILL_COOLDOWN_DAYS = 2;
+
+/** Attempts (1-4, 4 meaning 4+, 0 meaning never got it) -> the same 1-5 scale everything else uses. */
+export function attemptsToScore(attempts: number): number {
+  if (attempts <= 0) return 1;
+  if (attempts === 1) return 5;
+  if (attempts === 2) return 4;
+  if (attempts === 3) return 3;
+  return 2;
+}
+
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
