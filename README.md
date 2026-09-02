@@ -39,6 +39,17 @@ the day the last one was actually done. Longer than it sounds on purpose: every 
 adds another recurring blurt forever, so a short repeat gap means the daily load climbs without
 limit as the term goes on.
 
+**Daily practice, for subjects that need it** — maths does not survive a four-day gap the way
+recall subjects do. Turn on **Practise daily** on a subject (Subjects → the subject) and it stops
+scheduling class and chapter blurts altogether; instead three of its topics come up every single
+day for practice questions. Picked weakest-first and rotated so the same three don't lock in, and
+only topics actually taught in a logged class are eligible. You log two things per topic: how many
+questions you did, and how many attempts they generally took (1 / 2 / 3 / 4+ / didn't get it).
+Attempts map onto the same 1-5 scale everything else uses — 1 attempt is a 5, never landing it is
+a 1 — so maths ranks in the one Weak spots list alongside the rest. Practice sits **outside** the
+ten-a-day cap, because the entire point is that it can't get crowded out; and an unfinished day is
+dropped rather than carried over, since a practice habit shouldn't accumulate debt.
+
 **Only today** — the Today tab shows what is due today and nothing else. A blurt that is not due
 yet cannot be opened at all; blurting early throws away the gap that makes spacing work.
 
@@ -281,6 +292,10 @@ phone app — there is no sync.
     caps itself at ten blurts a batch. Both fix the same thing: every class logged adds a
     permanent recurring blurt, so the old cadence made the daily load grow without bound as the
     term went on.
+23. **DONE** — per-subject **daily practice**, for maths. A drill subject schedules no class or
+    chapter blurts at all; three of its topics come up daily instead, weakest-first and rotating,
+    logged as questions-done plus attempts-taken rather than a recall rating. Spacing is right for
+    recall and wrong for problem-solving — this stops pretending one schedule fits both.
 
 ## Layout
 
@@ -289,7 +304,7 @@ phone app — there is no sync.
 | `src/types.ts`          | data shapes (Subject, Chapter, Topic, ClassLog, Blurt, DayLog)  |
 | `src/db.ts`             | IndexedDB stores + load/put/delete/clear                        |
 | `src/state.ts`          | in-memory store, all mutations, write-through to IndexedDB      |
-| `src/schedule.ts`       | **the 1-4-7 / 2-week / 3-week engine** — `syncSchedule()`        |
+| `src/schedule.ts`       | **the 1-4-7 / 2-week / 3-week engine + daily drill** — `syncSchedule()` |
 | `src/notify.ts`         | reminders (web + Android) and the widget payload bridge         |
 | `src/backup.ts`         | JSON export/import, native file saving                          |
 | `src/cloud.ts`          | Firebase config, anonymous auth, permanent sync token + device cap, last-write-wins merge |
@@ -298,7 +313,7 @@ phone app — there is no sync.
 | `src/updateBanner.ts`   | background update check + Restart now/Later banner              |
 | `src/pulltorefresh.ts`  | pull-to-refresh gesture, forces an immediate sync                |
 | `src/swipeNav.ts`       | swipe left/right between the four main tabs (touch only)         |
-| `src/util.ts`           | local-time date maths, `R147_GAPS`, repeat gaps, ids, escaping    |
+| `src/util.ts`           | local-time date maths, `R147_GAPS`, repeat + drill gaps, ids, escaping |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |
 | `src/views/*.ts`        | today, log, plan, blurt, subjects, subject, chapter, parts      |
