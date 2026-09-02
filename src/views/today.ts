@@ -1,9 +1,9 @@
 import { rerender } from '../app';
-import { bringToToday, doneOnDate, dueBy, recentlyPushedToTomorrow, reopenBlurt, skipAllLate, skipBlurt } from '../schedule';
+import { doneOnDate, dueBy, reopenBlurt, skipAllLate, skipBlurt } from '../schedule';
 import { store } from '../state';
 import { confirmBox, onAct, toast } from '../ui';
-import { esc, fmtDate, todayISO } from '../util';
-import { blurtRow, labelFor, section } from './parts';
+import { fmtDate, todayISO } from '../util';
+import { blurtRow, section } from './parts';
 
 /** Only relevant once a pile of overdue stuff shows up — a fresh backdated class or two. */
 const SKIP_ALL_THRESHOLD = 10;
@@ -38,7 +38,6 @@ export function render(): string {
   const due = dueBy(today);
   const late = due.filter((b) => b.dueDate < today);
   const doneToday = doneOnDate(today);
-  const pushed = recentlyPushedToTomorrow();
 
   // Everything cleared today counts against the cap, so the list shrinks as you
   // work rather than refilling itself back up to ten from the backlog.
@@ -54,20 +53,6 @@ export function render(): string {
       <div class="stat ${late.length ? 'bad' : ''}"><div class="n">${late.length}</div><div class="k">Carried over</div></div>
       <div class="stat ${doneToday.length ? 'good' : ''}"><div class="n">${doneToday.length}</div><div class="k">Cleared</div></div>
     </div>
-
-    ${
-      pushed.length
-        ? `<div class="card" style="border-color:var(--warn-line)">
-             <div class="setting-row" style="padding-top:0">
-               <span class="grow">
-                 <div class="title">${pushed.length} blurt${pushed.length === 1 ? '' : 's'} just pushed to tomorrow</div>
-                 <div class="sub">${pushed.map((b) => esc(labelFor(b).title)).slice(0, 3).join(', ')}${pushed.length > 3 ? `, +${pushed.length - 3} more` : ''}</div>
-               </span>
-               <button class="btn sm" data-act="bring-all-today">Bring to today</button>
-             </div>
-           </div>`
-        : ''
-    }
 
     ${
       late.length > SKIP_ALL_THRESHOLD
@@ -137,11 +122,6 @@ export function wire(root: HTMLElement): void {
     }
     if (act === 'unlock-more') {
       unlockMore(today);
-      rerender();
-    }
-    if (act === 'bring-all-today') {
-      for (const b of recentlyPushedToTomorrow()) await bringToToday(b.id);
-      toast('Pulled back to today');
       rerender();
     }
     if (act === 'skip-all-late') {
