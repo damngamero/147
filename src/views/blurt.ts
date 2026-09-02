@@ -4,13 +4,14 @@ import {
   blurtById,
   blurtsFor,
   completeBlurt,
+  completeDrill,
   isActionable,
   skipBlurt,
   snoozeBlurt,
   topicsForBlurt,
 } from '../schedule';
 import { chapterById, store, subjectById } from '../state';
-import type { ID } from '../types';
+import type { Blurt, ID } from '../types';
 import { onAct, toast } from '../ui';
 import { esc, fmtDate, relDay } from '../util';
 
@@ -18,13 +19,28 @@ import { esc, fmtDate, relDay } from '../util';
 let sessionId = '';
 let scores: Record<ID, number> = {};
 let revealed = false;
+/** Drill session: questions worked, and attempts they took (null until tapped). */
+let drillQuestions = 1;
+let drillAttempts: number | null = null;
 
 function reset(id: string): void {
   if (sessionId === id) return;
   sessionId = id;
-  scores = { ...(blurtById(id)?.scores ?? {}) };
+  const b = blurtById(id);
+  scores = { ...(b?.scores ?? {}) };
   revealed = false;
+  drillQuestions = b?.questionsDone ?? 1;
+  drillAttempts = b?.attempts ?? null;
 }
+
+/** Attempt buttons, worst outcome last. 0 is a give-up, not four-plus tries. */
+const ATTEMPT_CHOICES: Array<{ n: number; label: string; note: string }> = [
+  { n: 1, label: '1', note: 'first try' },
+  { n: 2, label: '2', note: 'second try' },
+  { n: 3, label: '3', note: 'third try' },
+  { n: 4, label: '4+', note: 'took a few' },
+  { n: 0, label: "didn't get it", note: 'never landed it' },
+];
 
 const SCORE_WORDS: Record<number, string> = {
   1: 'blank',
@@ -35,7 +51,7 @@ const SCORE_WORDS: Record<number, string> = {
 };
 
 /** What was written down in class, for checking the paper blurt against. */
-function classNotes(refKind: 'class' | 'chapter', refId: string): string {
+function classNotes(refKind: Blurt['kind'], refId: string): string {
   const logs =
     refKind === 'chapter'
       ? store.logs.filter((l) => l.chapterId === refId)
@@ -48,7 +64,7 @@ function classNotes(refKind: 'class' | 'chapter', refId: string): string {
   return body || '<div class="dim">No class notes saved.</div>';
 }
 
-function historyHtml(kind: 'class' | 'chapter', refId: string, currentId: string): string {
+function historyHtml(kind: Blurt['kind'], refId: string, currentId: string): string {
   const past = blurtsFor(kind, refId)
     .filter((b) => b.id !== currentId && b.status !== 'due')
     .sort((a, b) => (b.doneOn ?? '').localeCompare(a.doneOn ?? ''));
@@ -62,12 +78,85 @@ function historyHtml(kind: 'class' | 'chapter', refId: string, currentId: string
             <span class="pill ${b.status === 'missed' ? 'warn' : 'good'}">${b.status}</span>
           </div>
           <div class="sub">${b.doneOn ? fmtDate(b.doneOn) : ''}${
-            b.score ? ` · averaged ${b.score}/5` : ''
+            b.questionsDone
+              ? ` · ${b.questionsDone} question${b.questionsDone === 1 ? '' : 's'}${
+                  b.attempts === 0
+                    ? ', never landed it'
+                    : b.attempts
+                      ? `, ${b.attempts}${b.attempts >= 4 ? '+' : ''} attempt${b.attempts === 1 ? '' : 's'}`
+                      : ''
+                }`
+              : b.score
+                ? ` · averaged ${b.score}/5`
+                : ''
           }</div>
         </span>
       </div>`,
     )
     .join('');
+}
+
+/**
+ * The drill screen. Deliberately not the blurt screen: there is nothing to
+ * recall and check against notes here, just questions worked and how hard they
+ * were, so it asks those two things and gets out of the way.
+ */
+function drillHtml(b: Blurt): string {
+  const s = subjectById(b.subjectId);
+  const c = chapterById(b.chapterId);
+  const [topic] = topicsForBlurt(b);
+
+  return `
+    <div class="crumb">
+      <a href="#/today">Today</a> /
+      <a href="#/chapter/${b.chapterId}">${esc(c?.name ?? '?')}</a>
+    </div>
+
+    <h1>
+      <span class="dot" style="background:${s?.color ?? '#666'};display:inline-block;margin-right:8px"></span>
+      ${esc(topic?.name ?? 'Topic')}
+    </h1>
+
+    <div class="chips" style="margin-bottom:14px">
+      <span class="pill accent">daily practice</span>
+      <span class="pill">${esc(s?.name ?? '')} · ${esc(c?.name ?? '')}</span>
+    </div>
+
+    <div class="card">
+      <div class="title">Work questions on this, on paper</div>
+      <p class="muted small" style="margin-top:6px">
+        Then log two things: how many you did, and how many attempts they generally took.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label>Questions done</label>
+        <input type="number" min="1" step="1" data-f="drill-questions" value="${drillQuestions}" />
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <label>How many attempts, generally?</label>
+        <div class="score">
+          ${ATTEMPT_CHOICES.map(
+            (a) => `
+            <button class="btn sm ${drillAttempts === a.n ? 'on' : ''}"
+                    data-act="attempts" data-n="${a.n}" title="${a.note}">${a.label}</button>`,
+          ).join('')}
+        </div>
+      </div>
+
+      <div class="actions" style="margin-top:16px">
+        <button class="btn primary" data-act="save-drill" ${drillAttempts === null ? 'disabled' : ''}>
+          ${drillAttempts === null ? 'Pick attempts to finish' : 'Done'}
+        </button>
+        <span class="spacer"></span>
+        <button class="btn ghost danger" data-act="skip">Skip today</button>
+      </div>
+    </div>
+
+    <h2>Past rounds</h2>
+    ${historyHtml(b.kind, b.refId, b.id)}`;
 }
 
 export function render(id: string): string {
@@ -84,6 +173,8 @@ export function render(id: string): string {
   }
 
   reset(id);
+
+  if (b.kind === 'topic') return drillHtml(b);
 
   const s = subjectById(b.subjectId);
   const c = chapterById(b.chapterId);
@@ -179,7 +270,26 @@ export function render(id: string): string {
 }
 
 export function wire(root: HTMLElement, id: string): void {
+  root.addEventListener('input', (e) => {
+    const t = e.target as HTMLInputElement;
+    if (t.dataset.f === 'drill-questions') {
+      drillQuestions = Math.max(1, Math.round(Number(t.value) || 1));
+    }
+  });
+
   onAct(root, async (act, el) => {
+    if (act === 'attempts') {
+      const n = Number(el.dataset.n);
+      drillAttempts = drillAttempts === n ? null : n;
+      rerender();
+    }
+    if (act === 'save-drill') {
+      if (drillAttempts === null) return;
+      await completeDrill(id, drillQuestions, drillAttempts);
+      sessionId = '';
+      toast('Logged');
+      location.hash = '#/today';
+    }
     if (act === 'score') {
       const topic = el.dataset.topic!;
       const n = Number(el.dataset.n);
