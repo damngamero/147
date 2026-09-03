@@ -115,15 +115,20 @@ function lastDrilledOn(topicId: ID): ISODate | null {
 }
 
 /**
- * Picks the topics for one day's drill: weakest first, but rotating off
+ * Picks topics to fill out one day's drill: weakest first, but rotating off
  * anything practised in the last couple of days so the same three don't lock
  * in forever. An unrated topic counts as the weakest there is — it has never
  * been shown to be solid. Only topics actually taught in a logged class are
  * eligible; a topic nobody has covered yet has nothing to practise.
+ *
+ * `want` is however many slots are still empty today, and `taken` is what
+ * already has a row — finishing one must never conjure a replacement, or the
+ * day never ends.
  */
-function pickDrillTopics(today: ISODate): Topic[] {
+function pickDrillTopics(today: ISODate, want: number, taken: Set<ID>): Topic[] {
+  if (want <= 0) return [];
   const eligible = store.topics.filter(
-    (t) => isDrillSubject(t.subjectId) && !!classForTopic(t.id),
+    (t) => isDrillSubject(t.subjectId) && !taken.has(t.id) && !!classForTopic(t.id),
   );
   if (!eligible.length) return [];
 
@@ -142,7 +147,7 @@ function pickDrillTopics(today: ISODate): Topic[] {
     const d = lastDrilledOn(t.id);
     return !d || daysBetween(d, today) >= DRILL_COOLDOWN_DAYS;
   });
-  const pool = fresh.length >= DRILL_PER_DAY ? fresh : eligible;
+  const pool = fresh.length >= want ? fresh : eligible;
 
   return [...pool]
     .sort((a, b) => {
@@ -150,7 +155,7 @@ function pickDrillTopics(today: ISODate): Topic[] {
       const rb = rank(b);
       return ra.weakness - rb.weakness || rb.staleness - ra.staleness;
     })
-    .slice(0, DRILL_PER_DAY);
+    .slice(0, want);
 }
 
 /* ---------- the graduation test ---------- */
@@ -380,9 +385,25 @@ export async function syncSchedule(): Promise<void> {
     );
   }
 
-  // Today's drill: one row per picked topic, deterministic id so this stays
-  // idempotent and two devices generating the same day agree on the ids.
-  for (const t of pickDrillTopics(today)) {
+  // Today's drill. The quota counts rows that ALREADY exist for today whatever
+  // their status, so finishing or skipping one never pulls a replacement in
+  // behind it — three a day means three, not three-at-a-time forever. The id
+  // is deterministic so this stays idempotent and two devices agree on it.
+  const drillsForToday = store.blurts.filter((b) => b.kind === 'topic' && b.dueDate === today);
+  const doneToday = drillsForToday.filter(isResolved);
+  const openToday = drillsForToday
+    .filter((b) => b.status === 'due')
+    .sort((a, b) => a.createdAt - b.createdAt);
+
+  // Trim any surplus left over from an earlier build that topped the list back
+  // up every time one was finished. Resolved rows are real work and are never
+  // touched; only unstarted extras past the quota go.
+  const allowedOpen = Math.max(0, DRILL_PER_DAY - doneToday.length);
+  for (const b of openToday.slice(allowedOpen)) drop(p, b.id);
+
+  const kept = doneToday.length + Math.min(openToday.length, allowedOpen);
+  const alreadyDrilled = new Set(drillsForToday.map((b) => b.refId));
+  for (const t of pickDrillTopics(today, DRILL_PER_DAY - kept, alreadyDrilled)) {
     const id = `b_daily_${today}_${t.id}`;
     if (blurtById(id)) continue;
     upsert(
