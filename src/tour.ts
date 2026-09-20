@@ -56,8 +56,8 @@ const STEPS: Step[] = [
   {
     title: '6. Weak spots and Settings',
     body: `<b>Weak spots</b> ranks your topics worst-first from the ratings, so you always know
-      what to go back over. Everything else — themes, cloud sync, <b>147 Tasks</b>,
-      reminders and backups — lives behind the <b>gear</b> in the top bar.
+      what to go back over. Everything else — themes, cloud sync, reminders and backups — lives
+      behind the <b>gear</b> in the top bar.
       <br /><br />
       Want this walkthrough again? Hit <b>?</b> next to it.`,
     go: '#/plan',

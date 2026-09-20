@@ -68,7 +68,14 @@ export interface ClassLog {
   updatedAt: number;
 }
 
-export type BlurtCycle = 'r1' | 'r4' | 'r7' | 'weekly' | 'fortnightly' | 'daily';
+export type BlurtCycle =
+  | 'r1'
+  | 'r4'
+  | 'r7'
+  | 'weekly'
+  | 'monthly'
+  | 'fortnightly'
+  | 'daily';
 export type BlurtStatus = 'due' | 'done' | 'missed' | 'cancelled';
 
 export interface Blurt {
@@ -85,7 +92,7 @@ export interface Blurt {
   chapterId: ID;
   dueDate: ISODate;
   cycle: BlurtCycle;
-  /** 1-based position within a repeating cycle (weekly / fortnightly); 0 for the ladder */
+  /** 1-based position within a repeating cycle (weekly / monthly / fortnightly); 0 for the ladder */
   seq: number;
   status: BlurtStatus;
   doneOn: ISODate | null;

@@ -42,7 +42,12 @@ export function labelFor(b: Blurt): BlurtLabel {
 }
 
 function cyclePill(b: Blurt): string {
-  const cls = b.cycle === 'fortnightly' ? 'pill last' : b.cycle === 'weekly' ? 'pill accent' : 'pill';
+  const cls =
+    b.cycle === 'fortnightly' || b.cycle === 'monthly'
+      ? 'pill last'
+      : b.cycle === 'weekly'
+        ? 'pill accent'
+        : 'pill';
   return `<span class="${cls}" title="${b.cycle}">${CYCLE_SHORT[b.cycle]}</span>`;
 }
 

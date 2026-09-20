@@ -12,7 +12,9 @@ export function render(): string {
       <tr><td>blurt 1</td><td>+1</td><td>${fmtDate(addDays(c, 1))}</td></tr>
       <tr><td>blurt 2</td><td>+4</td><td>${fmtDate(addDays(c, 5))}</td></tr>
       <tr><td>blurt 3</td><td>+7</td><td>${fmtDate(addDays(c, 12))}</td></tr>
-      <tr><td>then</td><td>weekly</td><td>${fmtDate(addDays(c, 19))}, and on</td></tr>
+      <tr><td>repeat 1</td><td>+14</td><td>${fmtDate(addDays(c, 26))}</td></tr>
+      <tr><td>repeat 2</td><td>+14</td><td>${fmtDate(addDays(c, 40))}</td></tr>
+      <tr><td>then</td><td>+30</td><td>${fmtDate(addDays(c, 70))}, monthly on</td></tr>
     </table>`;
 
   return `
@@ -47,11 +49,14 @@ export function render(): string {
       moving.</p>
     </div>
 
-    <h2>After the ladder — weekly</h2>
+    <h2>After the ladder — every 2 weeks, then monthly</h2>
     <div class="card guide-body">
-      <p>A class that has been through all three blurts drops to <b>one blurt a week</b>,
+      <p>A class that has been through all three blurts drops to <b>one blurt every 2 weeks</b>,
       counted from the day you actually did the last one rather than the day it was due. Do a
       blurt four days late and the next one shifts with you.</p>
+      <p>Clear <b>two</b> of those — about a month of holding onto it — and the class drops
+      again, to <b>one blurt a month</b>. Skipping counts, same as everywhere else. This is what
+      stops old material from quietly filling up every single day.</p>
     </div>
 
     <h2>Finished chapters — fortnightly</h2>

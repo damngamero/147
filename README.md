@@ -1,6 +1,6 @@
 # 147
 
-Class log → topics → automatic 1-4-7 blurt schedule → every 2 weeks → every 3 weeks.
+Class log → topics → automatic 1-4-7 blurt schedule → every 2 weeks → monthly → every 3 weeks.
 
 Vite + vanilla TypeScript + IndexedDB. No framework, no server, no account, no internet.
 One codebase ships three ways: browser, a Windows `.exe` (Electron) and an Android `.apk`
@@ -38,6 +38,11 @@ three independent deadlines.
 the day the last one was actually done. Longer than it sounds on purpose: every class you log
 adds another recurring blurt forever, so a short repeat gap means the daily load climbs without
 limit as the term goes on.
+
+**And then monthly** — once **two** of those two-week repeats are resolved (done or skipped —
+about a month of holding onto the material), the class drops again to **every 30 days**. Same
+anchoring, same one-open-repeat-at-a-time rule; only the gap changes. This is the release valve
+on the previous paragraph: without it, an old class costs the same every fortnight forever.
 
 **Daily practice, for subjects that need it** — maths does not survive a four-day gap the way
 recall subjects do. Turn on **Practise daily** on a subject (Subjects → the subject) and it stops
@@ -183,11 +188,6 @@ service cloud.firestore {
 The config is stored in `localStorage`, not compiled in, so the same `.exe`/`.apk` works against
 any project without a rebuild — `VITE_FIREBASE_CONFIG` at build time is just the default.
 
-One Firestore quirk worth knowing if you extend the data model: `setDoc` rejects any field whose
-value is `undefined`, while IndexedDB stores it happily. A new optional field that is left blank
-will therefore save fine locally and then fail *every* sync until it is stripped — `sync()` drops
-undefined keys on the way out for exactly this reason.
-
 **Adding a second device** — the first (already-synced) device shows a permanent six-digit
 **sync token** right in Settings → Cloud sync, mapping to that device's `accountKey` in Firestore.
 It never expires — generated once per account, reused for every future device. On the second
@@ -296,6 +296,9 @@ phone app — there is no sync.
     chapter blurts at all; three of its topics come up daily instead, weakest-first and rotating,
     logged as questions-done plus attempts-taken rather than a recall rating. Spacing is right for
     recall and wrong for problem-solving — this stops pretending one schedule fits both.
+24. **DONE** — a class that clears two two-week repeats graduates to a **monthly** one. The
+    two-week gap from phase 22 slowed the growth in daily load; it did not stop it, because a
+    class never left that cycle. Now it does, and old material decays out of the way on its own.
 
 ## Layout
 
@@ -304,7 +307,7 @@ phone app — there is no sync.
 | `src/types.ts`          | data shapes (Subject, Chapter, Topic, ClassLog, Blurt, DayLog)  |
 | `src/db.ts`             | IndexedDB stores + load/put/delete/clear                        |
 | `src/state.ts`          | in-memory store, all mutations, write-through to IndexedDB      |
-| `src/schedule.ts`       | **the 1-4-7 / 2-week / 3-week engine + daily drill** — `syncSchedule()` |
+| `src/schedule.ts`       | **the 1-4-7 / 2-week / 3-week engine** — `syncSchedule()`        |
 | `src/notify.ts`         | reminders (web + Android) and the widget payload bridge         |
 | `src/backup.ts`         | JSON export/import, native file saving                          |
 | `src/cloud.ts`          | Firebase config, anonymous auth, permanent sync token + device cap, last-write-wins merge |

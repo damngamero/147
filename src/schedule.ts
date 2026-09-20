@@ -4,8 +4,10 @@ import type { Blurt, BlurtCycle, Chapter, ClassLog, ID, ISODate, Topic } from '.
 import {
   CHAPTER_REPEAT_GAP,
   CLASS_REPEAT_GAP,
+  CLASS_REPEATS_BEFORE_MONTHLY,
   DRILL_COOLDOWN_DAYS,
   DRILL_PER_DAY,
+  MONTHLY_GAP,
   R147_GAPS,
   addDays,
   attemptsToScore,
@@ -20,6 +22,7 @@ export const CYCLE_LABEL: Record<BlurtCycle, string> = {
   r4: 'blurt 2',
   r7: 'blurt 3',
   weekly: 'every 2 weeks',
+  monthly: 'monthly',
   fortnightly: 'every 3 weeks',
   daily: 'daily practice',
 };
@@ -29,6 +32,7 @@ export const CYCLE_SHORT: Record<BlurtCycle, string> = {
   r4: '4',
   r7: '7',
   weekly: '2wk',
+  monthly: 'mth',
   fortnightly: '3wk',
   daily: 'day',
 };
@@ -333,29 +337,41 @@ export async function syncSchedule(): Promise<void> {
     const r4 = blurtById(r4Id);
     if (r4 && isResolved(r4)) chainStep(r7Id, 'r7', r4.doneOn ?? r4.dueDate, R147_GAPS.r7);
 
-    const weeklies = blurtsFor('class', log.id).filter((b) => b.cycle === 'weekly');
+    // The long tail of a class: a two-week repeat first, then — once two of
+    // those have been resolved, so roughly a month of holding onto it — a
+    // monthly one. Both are the same "one open repeat at a time" cycle, just
+    // on a longer gap, so they are generated together and counted together.
+    const repeats = blurtsFor('class', log.id).filter(
+      (b) => b.cycle === 'weekly' || b.cycle === 'monthly',
+    );
     const cleared = ladderResolved(log);
 
-    // Cleared the ladder and the chapter has not taken over yet -> weekly.
+    // Cleared the ladder and the chapter has not taken over yet -> repeats.
     if (!cleared || graduated) {
-      for (const b of weeklies) if (b.status === 'due') drop(p, b.id);
+      for (const b of repeats) if (b.status === 'due') drop(p, b.id);
       continue;
     }
 
-    if (!weeklies.some((b) => b.status === 'due')) {
-      const base = lastResolvedDate([...weeklies, ...ladderOf(log.id)]);
+    if (!repeats.some((b) => b.status === 'due')) {
+      const base = lastResolvedDate([...repeats, ...ladderOf(log.id)]);
       if (base) {
-        const seq = weeklies.length + 1;
+        // Skipping counts as resolving everywhere else in the app, so it counts
+        // here too — two cleared two-week repeats graduate the class either way.
+        const twoWeekly = repeats.filter((b) => b.cycle === 'weekly');
+        const graduatedToMonthly =
+          twoWeekly.filter(isResolved).length >= CLASS_REPEATS_BEFORE_MONTHLY;
+        const monthly = repeats.filter((b) => b.cycle === 'monthly');
+        const seq = (graduatedToMonthly ? monthly.length : twoWeekly.length) + 1;
         upsert(
           p,
           newBlurt({
-            id: `b_${log.id}_w${seq}`,
+            id: `b_${log.id}_${graduatedToMonthly ? 'm' : 'w'}${seq}`,
             kind: 'class',
             refId: log.id,
             subjectId: log.subjectId,
             chapterId: log.chapterId,
-            dueDate: addDays(base, CLASS_REPEAT_GAP),
-            cycle: 'weekly',
+            dueDate: addDays(base, graduatedToMonthly ? MONTHLY_GAP : CLASS_REPEAT_GAP),
+            cycle: graduatedToMonthly ? 'monthly' : 'weekly',
             seq,
           }),
         );

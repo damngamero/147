@@ -72,6 +72,16 @@ export const CLASS_REPEAT_GAP = 14;
 export const CHAPTER_REPEAT_GAP = 21;
 
 /**
+ * A class does not stay on the two-week repeat forever. Once this many of them
+ * have been resolved — two, so a month of holding it — the class drops to a
+ * monthly repeat instead. Material you have recalled five separate times over
+ * a month does not need fortnightly attention, and keeping it there is what
+ * makes the daily load creep back up.
+ */
+export const CLASS_REPEATS_BEFORE_MONTHLY = 2;
+export const MONTHLY_GAP = 30;
+
+/**
  * A drill subject (maths) puts this many separate topics in front of you every
  * day, and won't offer a topic again for COOLDOWN days unless there aren't
  * enough others to fill the slots. Small on purpose: three questions a day is
