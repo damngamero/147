@@ -16,7 +16,7 @@ import {
 import { chapterById, store, subjectById } from '../state';
 import type { Blurt, ID } from '../types';
 import { onAct, toast } from '../ui';
-import { esc, fmtDate, relDay } from '../util';
+import { esc, fmtDate, relDay, subjColor } from '../util';
 
 /** Ratings for the session in progress, per topic. */
 let sessionId = '';
@@ -139,7 +139,7 @@ function drillHtml(b: Blurt): string {
     </div>
 
     <h1>
-      <span class="dot" style="background:${s?.color ?? '#666'};display:inline-block;margin-right:8px"></span>
+      <span class="dot" style="background:${subjColor(s?.color)};display:inline-block;margin-right:8px"></span>
       ${esc(topic?.name ?? 'Topic')}
     </h1>
 
@@ -240,7 +240,7 @@ export function render(id: string): string {
     </div>
 
     <h1>
-      <span class="dot" style="background:${s?.color ?? '#666'};display:inline-block;margin-right:8px"></span>
+      <span class="dot" style="background:${subjColor(s?.color)};display:inline-block;margin-right:8px"></span>
       ${b.kind === 'chapter' ? esc(c?.name ?? 'Chapter') : `Class of ${log ? fmtDate(log.date) : '?'}`}
     </h1>
 

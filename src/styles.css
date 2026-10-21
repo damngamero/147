@@ -252,6 +252,12 @@ a { color: var(--accent); }
 .row .title { font-weight: 600; }
 .row .sub { font-size: 13px; color: var(--fg-2); }
 .row .chev { color: var(--fg-3); }
+/* Subject colour coding: a stripe down the left edge in the subject's colour. */
+.row.coded { border-left: 4px solid var(--subj) !important; }
+.subj-tag {
+  display: inline-block; padding: 0 7px; border-radius: 999px; border: 1px solid;
+  font-size: 12px; font-weight: 600; line-height: 18px; color: var(--fg); vertical-align: 1px;
+}
 /* A topic carries five buttons now — they get their own line under the name. */
 .row.topic-row { flex-wrap: wrap; }
 .row.topic-row .grow { flex-basis: 100%; }

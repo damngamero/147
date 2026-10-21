@@ -2,11 +2,15 @@ import { CYCLE_SHORT, partLabel, topicsForBlurt } from '../schedule';
 import { chapterById, store, subjectById } from '../state';
 import type { RevisionMethod } from '../types';
 import type { Blurt } from '../types';
-import { esc, fmtDate, relDay, todayISO } from '../util';
+import { codedStyle, esc, fmtDate, relDay, subjTag, todayISO } from '../util';
 
 export interface BlurtLabel {
   title: string;
+  /** Plain text, subject first — notifications use this. */
   sub: string;
+  /** The same line minus the subject, for rows that show the subject as a tag instead. */
+  detail: string;
+  subject: string;
   color: string;
 }
 
@@ -15,16 +19,22 @@ export function labelFor(b: Blurt): BlurtLabel {
   const c = chapterById(b.chapterId);
   if (b.kind === 'topic') {
     const [t] = topicsForBlurt(b);
+    const detail = `${c?.name ?? '?'} · practice`;
     return {
       title: t?.name ?? '(deleted topic)',
-      sub: `${s?.name ?? '?'} · ${c?.name ?? '?'} · practice`,
+      sub: `${s?.name ?? '?'} · ${detail}`,
+      detail,
+      subject: s?.name ?? '?',
       color: s?.color ?? '#666',
     };
   }
   if (b.kind === 'chapter') {
+    const detail = partLabel(b) || 'whole chapter';
     return {
       title: c?.name ?? '(deleted chapter)',
-      sub: `${s?.name ?? '?'} · ${partLabel(b) || 'whole chapter'}`,
+      sub: `${s?.name ?? '?'} · ${detail}`,
+      detail,
+      subject: s?.name ?? '?',
       color: s?.color ?? '#666',
     };
   }
@@ -34,9 +44,12 @@ export function labelFor(b: Blurt): BlurtLabel {
   const title = names.length
     ? names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3}` : '')
     : 'Class with no topics';
+  const detail = `${c?.name ?? '?'}${log ? ` · class ${fmtDate(log.date)}` : ''}`;
   return {
     title,
-    sub: `${s?.name ?? '?'} · ${c?.name ?? '?'}${log ? ` · class ${fmtDate(log.date)}` : ''}`,
+    sub: `${s?.name ?? '?'} · ${detail}`,
+    detail,
+    subject: s?.name ?? '?',
     color: s?.color ?? '#666',
   };
 }
@@ -77,11 +90,10 @@ export function blurtRow(b: Blurt, mode: 'open' | 'done' = 'open'): string {
         <button class="btn sm ghost" data-act="menu" data-id="${b.id}" title="More">&hellip;</button>`;
 
   return `
-    <div class="row blurt ${late && mode === 'open' ? 'late' : ''}">
-      <span class="dot" style="background:${l.color}"></span>
+    <div class="row blurt coded ${late && mode === 'open' ? 'late' : ''}" ${codedStyle(l.color)}>
       <span class="grow">
         <div class="title">${esc(l.title)} ${cyclePill(b)} ${methodPill(b)}</div>
-        <div class="sub">${esc(l.sub)} · <span class="${late && mode === 'open' ? 'overdue' : ''}">${when}</span>
+        <div class="sub">${subjTag(l.subject, l.color)} ${esc(l.detail)} · <span class="${late && mode === 'open' ? 'overdue' : ''}">${when}</span>
           ${b.score ? ` · <span class="dim">${b.score}/5</span>` : ''}
         </div>
       </span>

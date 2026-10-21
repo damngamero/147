@@ -1,6 +1,6 @@
 import { addSubject, chaptersOf, store, subjectById, updateSubject } from '../state';
 import { askText, onAct, toast } from '../ui';
-import { esc } from '../util';
+import { codedStyle, esc } from '../util';
 
 export function render(): string {
   const subs = [...store.subjects].sort((a, b) => a.createdAt - b.createdAt);
@@ -11,8 +11,8 @@ export function render(): string {
       const tops = store.topics.filter((t) => t.subjectId === s.id).length;
       const logs = store.logs.filter((l) => l.subjectId === s.id).length;
       return `
-      <a class="row" href="#/subject/${s.id}">
-        <span class="dot" style="background:${s.color}"></span>
+      <a class="row coded" href="#/subject/${s.id}" ${codedStyle(s.color)}>
+        <span class="dot" style="background:var(--subj)"></span>
         <span class="grow">
           <div class="title">${esc(s.name)}</div>
           <div class="sub">${chs.length} chapter${chs.length === 1 ? '' : 's'} &middot; ${tops} topic${tops === 1 ? '' : 's'} &middot; ${logs} class${logs === 1 ? '' : 'es'}</div>

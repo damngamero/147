@@ -2,7 +2,7 @@ import { rerender } from '../app';
 import { classForTopic, ladderProgress, topicScores } from '../schedule';
 import { chapterById, store, subjectById } from '../state';
 import { onAct } from '../ui';
-import { esc, fmtDate } from '../util';
+import { codedStyle, esc, fmtDate, subjTag } from '../util';
 
 let query = '';
 
@@ -39,12 +39,11 @@ function weakHtml(): string {
       const sub = subjectById(s.topic.subjectId);
       const c = chapterById(s.topic.chapterId);
       return `
-      <a class="row" href="#/chapter/${s.topic.chapterId}">
-        <span class="dot" style="background:${sub?.color ?? '#666'}"></span>
+      <a class="row coded" href="#/chapter/${s.topic.chapterId}" ${codedStyle(sub?.color)}>
         <span class="grow">
           <div class="title">${esc(s.topic.name)}</div>
           <div class="sub">
-            ${esc(sub?.name ?? '?')} · ${esc(c?.name ?? '?')} ·
+            ${subjTag(sub?.name, sub?.color)} ${esc(c?.name ?? '?')} ·
             rated ${s.times}&times;, average ${s.average}/5${
               s.lastOn ? ` · last ${fmtDate(s.lastOn)}` : ''
             }
@@ -73,11 +72,10 @@ function untestedHtml(): string {
       const log = classForTopic(t.id);
       const p = log ? ladderProgress(log) : { done: 0, total: 3 };
       return `
-      <a class="row" href="#/chapter/${t.chapterId}">
-        <span class="dot" style="background:${sub?.color ?? '#666'}"></span>
+      <a class="row coded" href="#/chapter/${t.chapterId}" ${codedStyle(sub?.color)}>
         <span class="grow">
           <div class="title">${esc(t.name)}</div>
-          <div class="sub">${esc(sub?.name ?? '?')} · ${esc(c?.name ?? '?')} · class 1-4-7 ${p.done}/${p.total}</div>
+          <div class="sub">${subjTag(sub?.name, sub?.color)} ${esc(c?.name ?? '?')} · class 1-4-7 ${p.done}/${p.total}</div>
         </span>
         <span class="pill">not rated yet</span>
       </a>`;

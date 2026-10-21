@@ -9,7 +9,7 @@ import {
 } from '../state';
 import { syncSchedule } from '../schedule';
 import { askText, confirmBox, onAct, toast } from '../ui';
-import { DRILL_PER_DAY, SUBJECT_COLORS, esc } from '../util';
+import { DRILL_PER_DAY, SUBJECT_COLORS, codedStyle, esc, subjColor } from '../util';
 
 export function render(id: string): string {
   const s = subjectById(id);
@@ -22,7 +22,7 @@ export function render(id: string): string {
       const last = tops.find((t) => t.isLast);
       const logs = logsOf(c.id).length;
       return `
-      <a class="row" href="#/chapter/${c.id}">
+      <a class="row coded" href="#/chapter/${c.id}" ${codedStyle(s.color)}>
         <span class="grow">
           <div class="title">${esc(c.name)}</div>
           <div class="sub">
@@ -38,7 +38,7 @@ export function render(id: string): string {
 
   return `
     <div class="crumb"><a href="#/subjects">Subjects</a> / ${esc(s.name)}</div>
-    <h1><span class="dot" style="background:${s.color};display:inline-block;margin-right:8px"></span>${esc(s.name)}</h1>
+    <h1><span class="dot" style="background:${subjColor(s.color)};display:inline-block;margin-right:8px"></span>${esc(s.name)}</h1>
 
     <div class="card">
       <div class="title">Colour</div>

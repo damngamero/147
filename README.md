@@ -87,7 +87,9 @@ behind. Tapping a sub topic moves it to another topic in the same chapter, renam
 
 Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 
-**Colours** — each subject's colour is picked on its page (presets or any colour), and syncs.
+**Subject colour coding** — every subject has a colour, picked on its page (presets or any
+colour), and it syncs. Everything belonging to a subject carries it: a stripe down the left of
+its blurts, classes, chapters and topics, and its name as a tag tinted in that colour.
 
 ## Builds
 

@@ -123,5 +123,19 @@ export const PALETTE = [
   '#7c9cff', '#5ecfa8', '#f2a65a', '#e8c05a', '#c07cff', '#57c7e8', '#f2778c',
 ];
 
+/** A subject's colour, checked — it syncs in from other devices, so it never goes into a style attribute raw. */
+export function subjColor(c: string | undefined): string {
+  return c && /^#[0-9a-f]{6}$/i.test(c) ? c : '#8a94a8';
+}
+
+/** The style that colour-codes a `.row.coded` with its subject: a stripe down the left edge. */
+export const codedStyle = (color: string | undefined) => `style="--subj:${subjColor(color)}"`;
+
+/** The subject's name as a small tag tinted in its colour — tinted, not coloured text, so pale colours stay readable on Paper. */
+export function subjTag(name: string | undefined, color: string | undefined): string {
+  const c = subjColor(color);
+  return `<span class="subj-tag" style="background:${c}2e;border-color:${c}80">${esc(name ?? '?')}</span>`;
+}
+
 /** What the subject colour picker offers up front — the auto palette plus a few more. Anything else via the free picker. */
 export const SUBJECT_COLORS = [...PALETTE, '#ff5fa2', '#9bd65a', '#e86a4a', '#a3aab8'];

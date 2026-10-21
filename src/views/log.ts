@@ -17,7 +17,7 @@ import {
 } from '../state';
 import type { ClassLog } from '../types';
 import { askText, confirmBox, onAct, toast } from '../ui';
-import { classLabel, esc, fmtDate, todayISO } from '../util';
+import { classLabel, esc, fmtDate, subjColor, todayISO } from '../util';
 
 interface Draft {
   id: string;
@@ -144,7 +144,7 @@ function formHtml(d: Draft): string {
 
       <div class="field">
         <label>Subject</label>
-        <select data-f="subjectId">${subjectOpts}</select>
+        <select data-f="subjectId" ${d.subjectId ? `style="border-left:4px solid ${subjColor(subjectById(d.subjectId)?.color)}"` : ''}>${subjectOpts}</select>
       </div>
 
       <div class="field">
@@ -204,13 +204,14 @@ function matchesSearch(l: ClassLog, q: string): boolean {
 
 function logRowHtml(l: ClassLog): string {
   const c = chapterById(l.chapterId);
+  const s = subjectById(l.subjectId);
   const names = l.topicIds
     .map((id) => topicById(id)?.name)
     .filter(Boolean)
     .map((n) => `<span class="pill">${esc(n!)}</span>`)
     .join('');
   return `
-    <a class="row" href="#/log/${l.id}" style="align-items:flex-start">
+    <a class="row coded" href="#/log/${l.id}" style="align-items:flex-start;--subj:${subjColor(s?.color)}">
       <span class="grow">
         <div class="title">${esc(classLabel(l))} <span class="dim">&middot; ${fmtDate(l.date)}</span></div>
         <div class="sub">
@@ -250,7 +251,8 @@ function historyHtml(query: string): string {
       const open = !!q || expandedSubjects.has(s.id);
       return `
       <div class="daygroup" data-act="toggle-subject" data-id="${s.id}" style="cursor:pointer">
-        <span class="dim">${open ? '&#9662;' : '&#9656;'}</span> ${esc(s.name)}
+        <span class="dim">${open ? '&#9662;' : '&#9656;'}</span>
+        <span class="dot" style="background:${subjColor(s.color)};display:inline-block;margin:0 4px"></span>${esc(s.name)}
         <span class="dim">(${group.length})</span>
       </div>
       ${open ? group.map(logRowHtml).join('') : ''}`;

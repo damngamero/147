@@ -19,7 +19,16 @@ import {
 import { chapterQualifies, classForTopic, ladderProgress, ladderResolved, syncSchedule } from '../schedule';
 import { askChoice, askText, confirmBox, onAct, toast } from '../ui';
 import type { Topic } from '../types';
-import { CHAPTER_PART_MAX_SUBTOPICS, SUBTOPICS_NEW_UNTIL, classLabel, esc, fmtDate, todayISO } from '../util';
+import {
+  CHAPTER_PART_MAX_SUBTOPICS,
+  SUBTOPICS_NEW_UNTIL,
+  classLabel,
+  codedStyle,
+  esc,
+  fmtDate,
+  subjTag,
+  todayISO,
+} from '../util';
 
 export function render(id: string): string {
   const c = chapterById(id);
@@ -38,7 +47,7 @@ export function render(id: string): string {
       const p = log ? ladderProgress(log) : null;
       const subs = t.subtopics ?? [];
       return `
-      <div class="row topic-row">
+      <div class="row topic-row coded" ${codedStyle(s?.color)}>
         <span class="grow">
           <div class="title">${esc(t.name)} ${t.isLast ? '<span class="pill last">last topic</span>' : ''}</div>
           <div class="sub">
@@ -71,7 +80,7 @@ export function render(id: string): string {
     .map((l) => {
       const p = ladderProgress(l);
       return `
-      <a class="row" href="#/log/${l.id}">
+      <a class="row coded" href="#/log/${l.id}" ${codedStyle(s?.color)}>
         <span class="grow">
           <div class="title">${esc(classLabel(l))} <span class="dim">&middot; ${fmtDate(l.date)}</span></div>
           <div class="sub">${l.what ? esc(l.what.slice(0, 90)) : '<span class="dim">no notes</span>'}</div>
@@ -90,7 +99,7 @@ export function render(id: string): string {
       <a href="#/subjects">Subjects</a> /
       <a href="#/subject/${c.subjectId}">${esc(s?.name ?? '?')}</a> / ${esc(c.name)}
     </div>
-    <h1>${esc(c.name)}</h1>
+    <h1>${esc(c.name)} ${subjTag(s?.name, s?.color)}</h1>
 
     <div class="card">
       <div class="actions">
