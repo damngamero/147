@@ -115,6 +115,12 @@ export interface Blurt {
   /** Chapter blurts only: 1-based part within its round, and how many parts the round was planned at. */
   part?: number;
   parts?: number;
+  /**
+   * The date it was due before "Tomorrow" pushed it back. Only ever set, never
+   * undefined (Firestore rejects undefined fields) — lets a mis-tap be undone
+   * by doing it today anyway.
+   */
+  snoozedFrom?: ISODate;
   /** Drills only: how many questions were worked on this topic. */
   questionsDone?: number;
   /** Drills only: attempts it generally took — 1-4, where 4 means 4+, and 0 means never got it. */

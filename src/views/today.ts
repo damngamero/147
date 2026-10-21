@@ -1,5 +1,5 @@
 import { rerender } from '../app';
-import { doneOnDate, drillsToday, dueBy, reopenBlurt, skipAllLate, skipBlurt } from '../schedule';
+import { doneOnDate, drillsToday, dueBy, readyEarly, reopenBlurt, skipAllLate, skipBlurt } from '../schedule';
 import { store } from '../state';
 import { confirmBox, onAct, toast } from '../ui';
 import { fmtDate, todayISO } from '../util';
@@ -50,6 +50,7 @@ export function render(): string {
   const allowance = Math.max(0, DAILY_CAP + extraToday(today) - doneBlurts.length);
   const visible = due.slice(0, allowance);
   const heldBack = due.length - visible.length;
+  const early = readyEarly(today);
 
   return `
     <h1>${fmtDate(today)}</h1>
@@ -93,6 +94,17 @@ export function render(): string {
                 : 'Nothing to blurt today. Enjoy it.'
           }</div>`,
     )}
+
+    ${
+      early.length
+        ? section(
+            'Ready now — or tomorrow',
+            early.length,
+            `<p class="muted small" style="margin-top:-4px">The next part of a chapter, or something pushed to tomorrow. Do it now if you've got it in you; otherwise it's tomorrow's.</p>
+             ${early.map((b) => blurtRow(b)).join('')}`,
+          )
+        : ''
+    }
 
     ${
       heldBack

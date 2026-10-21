@@ -76,8 +76,10 @@ never gets a per-class repeat, it drops straight into the chapter blurt when it 
 **Big chapters come in parts** — a chapter blurt never asks for more than **20 sub topics** at once
 (a topic with no sub topics counts as one). A bigger chapter is packed, in order, into parts of
 whole topics: if the next topic won't fit it goes to the next part instead — a topic is never split.
-Part 2 comes up the day after part 1 is done (or skipped), part 3 the day after that, and the
-three-week gap to the next round counts from the last part. Each part keeps its own ratings, and
+Part 2 opens the moment part 1 is done (or skipped) — do it straight after, or leave it for the
+next day; Today shows it under *Ready now — or tomorrow*. Same for part 3. The three-week gap to
+the next round counts from the last part. Anything pushed with *Tomorrow* shows there too, so a
+mis-tap can still be done today. Each part keeps its own ratings, and
 ratings given halfway through a part are saved as you go. A part nobody has started rating yet
 re-packs itself if sub topics change; once a rating is in, it's frozen.
 

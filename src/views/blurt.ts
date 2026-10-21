@@ -257,7 +257,7 @@ export function render(id: string): string {
       <p class="muted small" style="margin-top:6px">
         ${topics.length} topic${topics.length === 1 ? '' : 's'} from this
         ${b.kind === 'chapter' ? 'chapter' : 'class'}${
-          partLabel(b) ? ` — ${partLabel(b)}, the next part comes up the day after you finish this one` : ''
+          partLabel(b) ? ` — ${partLabel(b)}. The next part opens as soon as this one's done — now or tomorrow, your call` : ''
         }.
         ${
           questions

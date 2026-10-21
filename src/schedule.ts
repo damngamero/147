@@ -63,9 +63,26 @@ export function dueBy(date: ISODate = todayISO()): Blurt[] {
   return openBlurts().filter((b) => b.dueDate <= date);
 }
 
-/** Blurting ahead defeats the point, so the UI refuses anything not yet due. */
+/**
+ * Due tomorrow but fine to do today. Blurting ahead defeats the 1-4-7 gap, so
+ * this is narrow: a chapter blurt (the next part of a split chapter opens the
+ * moment the previous one is done — tomorrow is the fallback, not a lock — and
+ * a day early on a three-week gap costs nothing), or anything that was only
+ * pushed to tomorrow from a day that has already come.
+ */
+export function canDoEarly(b: Blurt, today: ISODate = todayISO()): boolean {
+  if (b.status !== 'due' || b.dueDate <= today || b.dueDate > addDays(today, 1)) return false;
+  return b.kind === 'chapter' || (!!b.snoozedFrom && b.snoozedFrom <= today);
+}
+
+/** What Today offers as "ready now, or tomorrow". */
+export function readyEarly(today: ISODate = todayISO()): Blurt[] {
+  return openBlurts().filter((b) => canDoEarly(b, today));
+}
+
+/** Blurting ahead defeats the point, so the UI refuses anything not yet due — bar canDoEarly. */
 export function isActionable(b: Blurt): boolean {
-  return b.status === 'due' && b.dueDate <= todayISO();
+  return b.status === 'due' && (b.dueDate <= todayISO() || canDoEarly(b));
 }
 
 export function doneOnDate(date: ISODate): Blurt[] {
@@ -696,6 +713,7 @@ export async function snoozeBlurt(id: ID, days = 1): Promise<void> {
   const b = blurtById(id);
   if (!b || b.status !== 'due') return;
   const from = b.dueDate < todayISO() ? todayISO() : b.dueDate;
+  if (!b.snoozedFrom) b.snoozedFrom = b.dueDate;
   b.dueDate = addDays(from, days);
   await db.put('blurts', b);
   emit();
