@@ -74,6 +74,48 @@ export function askText(
   });
 }
 
+export interface Action {
+  value: string;
+  label: string;
+  danger?: boolean;
+}
+
+/** A small menu: one big button per action, plus Cancel. Resolves to the picked value, or null. */
+export function askAction(opts: { title: string; body?: string; actions: Action[] }): Promise<string | null> {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-title">${esc(opts.title)}</div>
+        ${opts.body ? `<p class="muted small">${esc(opts.body)}</p>` : ''}
+        <div class="action-list">
+          ${opts.actions
+            .map(
+              (a) =>
+                `<button class="btn ${a.danger ? 'danger' : ''}" data-x="act" data-v="${esc(a.value)}">${esc(a.label)}</button>`,
+            )
+            .join('')}
+          <button class="btn ghost" data-x="cancel">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    const close = (v: string | null) => {
+      back.remove();
+      resolve(v);
+    };
+    back.addEventListener('click', (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>('[data-x]');
+      if (e.target === back || t?.dataset.x === 'cancel') close(null);
+      else if (t?.dataset.x === 'act') close(t.dataset.v ?? null);
+    });
+    back.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') close(null);
+    });
+    back.querySelector<HTMLElement>('[data-x="act"]')?.focus();
+  });
+}
+
 export interface ChoiceGroup {
   label: string;
   options: Array<{ value: string; label: string }>;

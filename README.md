@@ -87,6 +87,14 @@ behind. Tapping a sub topic moves it to another topic in the same chapter, renam
 
 Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 
+**Logging a class** — one page in four sections: *When* (date, optional name), *Subject & chapter*
+(subjects as colour-coded buttons), *Topics covered* (the chapter's topics and any new ones in one
+list; *…* on a topic opens its sub topics, rename and delete), and *Notes*. Typing a topic the
+chapter already has ticks it instead of making a duplicate. Save sits in a bar pinned to the bottom.
+
+**Themes** — Midnight, Forest, Ember (dark) and Neo (light: neobrutalism — thick ink, hard
+shadows). Neo replaced the old Paper theme; a device left on Paper moves to Neo.
+
 **Subject colour coding** — every subject has a colour, picked on its page (presets or any
 colour), and it syncs. Everything belonging to a subject carries it: a stripe down the left of
 its blurts, classes, chapters and topics, and its name as a tag tinted in that colour.

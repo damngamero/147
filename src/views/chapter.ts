@@ -26,6 +26,7 @@ import {
   codedStyle,
   esc,
   fmtDate,
+  splitList,
   subjTag,
   todayISO,
 } from '../util';
@@ -230,10 +231,7 @@ export function wire(root: HTMLElement, id: string): void {
         multiline: true,
         okLabel: 'Add',
       });
-      const names = (text ?? '')
-        .split(/[\n,]/)
-        .map((x) => x.trim())
-        .filter(Boolean);
+      const names = splitList(text);
       if (names.length) {
         await updateTopic(tid, { subtopics: [...(t.subtopics ?? []), ...names] });
         await syncSchedule();

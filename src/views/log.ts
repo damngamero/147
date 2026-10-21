@@ -16,8 +16,8 @@ import {
   updateTopic,
 } from '../state';
 import type { ClassLog } from '../types';
-import { askText, confirmBox, onAct, toast } from '../ui';
-import { classLabel, esc, fmtDate, subjColor, todayISO } from '../util';
+import { askAction, askText, confirmBox, onAct, toast } from '../ui';
+import { classLabel, esc, fmtDate, splitList, subjColor, todayISO } from '../util';
 
 interface Draft {
   id: string;
@@ -30,6 +30,8 @@ interface Draft {
   newTopicNames: string[];
   /** Whatever is half-typed in the new-topic box, so a re-render can't eat it. */
   pendingTopic: string;
+  /** Sub topics for the new topics, keyed by lower-cased name — they get created together on save. */
+  newTopicSubs: Record<string, string[]>;
 }
 
 /** Session-only, not persisted — searches by class name, topic name, or notes. */
@@ -55,6 +57,7 @@ function blankDraft(chapterId: string): Draft {
     topicIds: new Set(),
     newTopicNames: [],
     pendingTopic: '',
+    newTopicSubs: {},
   };
 }
 
@@ -76,6 +79,7 @@ function ensureDraft(route: Route): Draft {
         topicIds: new Set(l.topicIds),
         newTopicNames: [],
         pendingTopic: '',
+        newTopicSubs: {},
       };
       return draft;
     }
@@ -91,16 +95,49 @@ function normalise(d: Draft): void {
   if (!chapters.some((c) => c.id === d.chapterId)) d.chapterId = chapters[0]?.id ?? '';
 }
 
-function newTopicChipsHtml(d: Draft): string {
+/** Sub topics as one quiet line under a topic name. */
+function subsLine(subs: string[] | undefined): string {
+  return subs?.length
+    ? `<span class="topic-subs">${subs.length} sub topic${subs.length === 1 ? '' : 's'} · ${subs.map(esc).join(', ')}</span>`
+    : '';
+}
+
+/** Topics typed in this time — they sit in the same list as the chapter's, always included. */
+function newTopicRowsHtml(d: Draft): string {
   return d.newTopicNames
     .map(
       (name, i) => `
-      <span class="chip-tag">
-        ${esc(name)}
-        <button type="button" class="chip-x" data-act="rm-new-topic" data-i="${i}" title="Remove">&times;</button>
-      </span>`,
+      <div class="topic-item on">
+        <span class="topic-tick">&check;</span>
+        <span class="grow">
+          <span class="topic-name">${esc(name)} <span class="pill accent">new</span></span>
+          ${subsLine(d.newTopicSubs[name.toLowerCase()])}
+        </span>
+        <button type="button" class="icon-btn" data-act="new-topic-menu" data-i="${i}" title="Sub topics, remove">&hellip;</button>
+      </div>`,
     )
     .join('');
+}
+
+function topicCount(d: Draft): number {
+  return d.topicIds.size + d.newTopicNames.length;
+}
+
+function saveLabel(d: Draft): string {
+  const n = topicCount(d);
+  return `${d.id ? 'Save changes' : 'Save class'}${n ? ` · ${n} topic${n === 1 ? '' : 's'}` : ''}`;
+}
+
+/** Sub topics, one per line — prefilled with what's there, so this both adds and edits. */
+function askSubtopics(topic: string, current: string[]): Promise<string | null> {
+  return askText({
+    title: `Sub topics of ${topic}`,
+    body: 'One per line (or separated by commas). Chapter blurts are split by sub topic count, max 20 a part.',
+    label: 'Sub topics',
+    value: current.join('\n'),
+    multiline: true,
+    okLabel: 'Save',
+  });
 }
 
 function formHtml(d: Draft): string {
@@ -108,83 +145,94 @@ function formHtml(d: Draft): string {
   const chapters = d.subjectId ? chaptersOf(d.subjectId) : [];
   const topics = d.chapterId ? topicsOf(d.chapterId) : [];
 
-  const subjectOpts = store.subjects
-    .map((s) => `<option value="${s.id}" ${s.id === d.subjectId ? 'selected' : ''}>${esc(s.name)}</option>`)
+  const subjectPicks = store.subjects
+    .filter((s) => !s.archived || s.id === d.subjectId)
+    .map(
+      (s) => `
+      <button type="button" class="subj-pick ${s.id === d.subjectId ? 'on' : ''}" data-act="pick-subject"
+              data-id="${s.id}" style="--subj:${subjColor(s.color)}">
+        <span class="dot" style="background:var(--subj)"></span>${esc(s.name)}
+      </button>`,
+    )
     .join('');
   const chapterOpts = chapters
     .map((c) => `<option value="${c.id}" ${c.id === d.chapterId ? 'selected' : ''}>${esc(c.name)}</option>`)
     .join('');
 
-  const checks = topics
-    .map(
-      (t) => `
-      <div class="check-row">
-        <label class="check ${d.topicIds.has(t.id) ? 'on' : ''}">
-          <input type="checkbox" data-topic="${t.id}" ${d.topicIds.has(t.id) ? 'checked' : ''} />
-          <span class="grow">${esc(t.name)}</span>
-          ${t.isLast ? '<span class="pill last">last</span>' : ''}
+  const existing = topics
+    .map((t) => {
+      const on = d.topicIds.has(t.id);
+      return `
+      <div class="topic-item ${on ? 'on' : ''}">
+        <label class="grow topic-check">
+          <input type="checkbox" data-topic="${t.id}" ${on ? 'checked' : ''} />
+          <span class="grow">
+            <span class="topic-name">${esc(t.name)} ${t.isLast ? '<span class="pill last">last</span>' : ''}</span>
+            ${subsLine(t.subtopics)}
+          </span>
         </label>
-        <button type="button" class="icon-btn" data-act="rename-topic" data-id="${t.id}" title="Rename topic">&#9662;</button>
-        <button type="button" class="icon-btn danger" data-act="del-topic" data-id="${t.id}" title="Delete topic">&times;</button>
-      </div>`,
-    )
+        <button type="button" class="icon-btn" data-act="topic-menu" data-id="${t.id}" title="Sub topics, rename, delete">&hellip;</button>
+      </div>`;
+    })
     .join('');
 
   return `
-    <div class="card">
-      <div class="field">
-        <label>Date of class</label>
-        <input type="date" data-f="date" value="${d.date}" />
-      </div>
-
-      <div class="field">
-        <label>Class name (optional)</label>
-        <input type="text" data-f="name" value="${esc(d.name)}" placeholder="Leave blank to just use the date" />
-      </div>
-
-      <div class="field">
-        <label>Subject</label>
-        <select data-f="subjectId" ${d.subjectId ? `style="border-left:4px solid ${subjColor(subjectById(d.subjectId)?.color)}"` : ''}>${subjectOpts}</select>
-      </div>
-
-      <div class="field">
-        <label>Chapter</label>
-        ${
-          chapters.length
-            ? `<select data-f="chapterId">${chapterOpts}</select>`
-            : '<div class="empty small">This subject has no chapters yet.</div>'
-        }
-        <div class="actions" style="margin-top:8px">
-          <button class="btn sm ghost" data-act="new-chapter" ${d.subjectId ? '' : 'disabled'}>+ New chapter</button>
+    <div class="log-form">
+      <section class="card">
+        <div class="sec-title">When</div>
+        <div class="grid2">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" data-f="date" value="${d.date}" />
+          </div>
+          <div class="field">
+            <label>Name <span class="dim">(optional)</span></label>
+            <input type="text" data-f="name" value="${esc(d.name)}" placeholder="Uses the date if blank" />
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="field">
-        <label>Topics covered</label>
-        ${topics.length ? `<div class="checklist">${checks}</div>` : '<div class="dim small">No topics on this chapter yet — type new ones below.</div>'}
-      </div>
-
-      <div class="field">
-        <label>New topics</label>
-        <div class="chip-input">
-          <div class="chip-list" data-chips="new-topics">${newTopicChipsHtml(d)}</div>
-          <input type="text" data-f="new-topic-input" value="${esc(d.pendingTopic)}"
-                 placeholder="Type a topic, press Enter to add" />
+      <section class="card">
+        <div class="sec-title">Subject</div>
+        <div class="subj-picks">${subjectPicks}</div>
+        <div class="sec-title" style="margin-top:14px">Chapter</div>
+        <div class="inline">
+          ${
+            chapters.length
+              ? `<select data-f="chapterId">${chapterOpts}</select>`
+              : '<div class="dim small grow">No chapters in this subject yet.</div>'
+          }
+          <button class="btn sm" data-act="new-chapter" ${d.subjectId ? '' : 'disabled'}>+ New</button>
         </div>
-      </div>
+      </section>
 
-      <div class="field">
-        <label>What I did in this class — this is what your blurts get checked against</label>
+      <section class="card">
+        <div class="sec-head">
+          <div class="sec-title">Topics covered</div>
+          <span class="pill" data-count>${topicCount(d)} ticked</span>
+        </div>
+        <div class="topic-list">
+          ${existing}
+          <div data-new-topics>${newTopicRowsHtml(d)}</div>
+          ${topics.length || d.newTopicNames.length ? '' : '<div class="dim small" data-no-topics style="padding:6px 2px">No topics on this chapter yet — add the ones from this class below.</div>'}
+        </div>
+        <div class="inline" style="margin-top:10px">
+          <input type="text" data-f="new-topic-input" value="${esc(d.pendingTopic)}" placeholder="New topic…" />
+          <button type="button" class="btn sm" data-act="add-new-topic">Add</button>
+        </div>
+        <div class="dim small" style="margin-top:6px">Tap &hellip; on a topic for its sub topics.</div>
+      </section>
+
+      <section class="card">
+        <div class="sec-title">Notes</div>
+        <div class="dim small" style="margin-bottom:8px">What you did in class — your blurts get checked against this.</div>
         <textarea data-f="what">${esc(d.what)}</textarea>
-      </div>
+      </section>
 
-      <div class="actions">
-        <button class="btn primary" data-act="save" ${d.chapterId ? '' : 'disabled'}>
-          ${d.id ? 'Save changes' : 'Save class'}
-        </button>
-        ${d.id ? '<button class="btn ghost danger" data-act="delete">Unlog this class</button>' : ''}
-        <span class="spacer"></span>
-        ${d.id ? '<a class="btn ghost" href="#/log">New class</a>' : ''}
+      <div class="save-bar">
+        <button class="btn primary grow" data-act="save" ${d.chapterId ? '' : 'disabled'}>${saveLabel(d)}</button>
+        ${d.id ? '<button class="btn ghost danger" data-act="delete" title="Unlog this class">Unlog</button>' : ''}
+        ${d.id ? '<a class="btn ghost" href="#/log">New</a>' : ''}
       </div>
     </div>`;
 }
@@ -301,18 +349,13 @@ export function wire(root: HTMLElement, route: Route): void {
       const on = (t as HTMLInputElement).checked;
       if (on) d.topicIds.add(t.dataset.topic);
       else d.topicIds.delete(t.dataset.topic);
-      t.closest('.check')?.classList.toggle('on', on);
+      t.closest('.topic-item')?.classList.toggle('on', on);
+      syncCounts();
     }
   });
 
   root.addEventListener('change', (e) => {
     const t = e.target as HTMLSelectElement;
-    if (t.dataset.f === 'subjectId') {
-      d.subjectId = t.value;
-      d.chapterId = '';
-      d.topicIds.clear();
-      rerender();
-    }
     if (t.dataset.f === 'chapterId') {
       d.chapterId = t.value;
       d.topicIds.clear();
@@ -320,12 +363,20 @@ export function wire(root: HTMLElement, route: Route): void {
     }
   });
 
-  // Chip-style new-topic adder — updates just the chip list, not a full
+  // New topics update just their own rows and the counts, not a full
   // rerender, so the input never loses focus while typing several in a row.
   const newTopicInput = root.querySelector<HTMLInputElement>('[data-f="new-topic-input"]');
-  const chipList = root.querySelector<HTMLElement>('[data-chips="new-topics"]');
+  const newList = root.querySelector<HTMLElement>('[data-new-topics]');
+  function syncCounts(): void {
+    const count = root.querySelector<HTMLElement>('[data-count]');
+    if (count) count.textContent = `${topicCount(d)} ticked`;
+    const save = root.querySelector<HTMLButtonElement>('[data-act="save"]');
+    if (save) save.textContent = saveLabel(d);
+  }
   const syncChips = () => {
-    if (chipList) chipList.innerHTML = newTopicChipsHtml(d);
+    if (newList) newList.innerHTML = newTopicRowsHtml(d);
+    if (d.newTopicNames.length) root.querySelector('[data-no-topics]')?.remove();
+    syncCounts();
   };
   const addFromInput = () => {
     if (!newTopicInput) return;
@@ -333,13 +384,27 @@ export function wire(root: HTMLElement, route: Route): void {
       .split(',')
       .map((x) => x.trim())
       .filter(Boolean);
+    // A name the chapter already has just ticks that topic instead of making a twin.
+    const have = new Map(
+      (d.chapterId ? topicsOf(d.chapterId) : []).map((t) => [t.name.trim().toLowerCase(), t]),
+    );
+    let ticked = false;
     for (const name of parts) {
-      if (!d.newTopicNames.some((n) => n.toLowerCase() === name.toLowerCase())) {
+      const match = have.get(name.toLowerCase());
+      if (match) {
+        if (!d.topicIds.has(match.id)) ticked = true;
+        d.topicIds.add(match.id);
+      } else if (!d.newTopicNames.some((n) => n.toLowerCase() === name.toLowerCase())) {
         d.newTopicNames.push(name);
       }
     }
     newTopicInput.value = '';
     d.pendingTopic = '';
+    if (ticked) {
+      toast('Already in this chapter — ticked it');
+      rerender();
+      return;
+    }
     syncChips();
   };
   newTopicInput?.addEventListener('keydown', (e) => {
@@ -385,43 +450,87 @@ export function wire(root: HTMLElement, route: Route): void {
       return;
     }
 
-    if (act === 'rename-topic') {
-      ev.preventDefault();
-      const tid = el.dataset.id!;
-      const t = topicById(tid);
-      if (!t) return;
-      const name = await askText({ title: 'Rename topic', label: 'Name', value: t.name, okLabel: 'Save' });
-      if (name) {
-        await updateTopic(tid, { name });
-        rerender();
-      }
+    if (act === 'pick-subject') {
+      if (el.dataset.id === d.subjectId) return;
+      d.subjectId = el.dataset.id!;
+      d.chapterId = '';
+      d.topicIds.clear();
+      rerender();
       return;
     }
 
-    if (act === 'del-topic') {
+    if (act === 'add-new-topic') {
+      addFromInput();
+      newTopicInput?.focus();
+      return;
+    }
+
+    if (act === 'topic-menu') {
       ev.preventDefault();
-      const tid = el.dataset.id!;
-      const t = topicById(tid);
+      const t = topicById(el.dataset.id!);
       if (!t) return;
-      const yes = await confirmBox({
-        title: `Delete ${t.name}?`,
-        body: 'Its blurts go too, and it comes off any class it was ticked on.',
-        okLabel: 'Delete',
-        danger: true,
+      const pick = await askAction({
+        title: t.name,
+        actions: [
+          { value: 'subs', label: t.subtopics?.length ? `Sub topics (${t.subtopics.length})` : 'Add sub topics' },
+          { value: 'rename', label: 'Rename' },
+          { value: 'delete', label: 'Delete topic', danger: true },
+        ],
       });
-      if (yes) {
-        d.topicIds.delete(tid);
-        await deleteTopic(tid);
-        toast('Topic deleted');
+      if (pick === 'subs') {
+        const text = await askSubtopics(t.name, t.subtopics ?? []);
+        if (text === null) return;
+        await updateTopic(t.id, { subtopics: splitList(text) });
         rerender();
+      }
+      if (pick === 'rename') {
+        const name = await askText({ title: 'Rename topic', label: 'Name', value: t.name, okLabel: 'Save' });
+        if (name) {
+          await updateTopic(t.id, { name });
+          rerender();
+        }
+      }
+      if (pick === 'delete') {
+        const yes = await confirmBox({
+          title: `Delete ${t.name}?`,
+          body: 'Its blurts go too, and it comes off any class it was ticked on.',
+          okLabel: 'Delete',
+          danger: true,
+        });
+        if (yes) {
+          d.topicIds.delete(t.id);
+          await deleteTopic(t.id);
+          toast('Topic deleted');
+          rerender();
+        }
       }
       return;
     }
 
-    if (act === 'rm-new-topic') {
+    if (act === 'new-topic-menu') {
       ev.preventDefault();
       const i = Number(el.dataset.i);
-      d.newTopicNames.splice(i, 1);
+      const name = d.newTopicNames[i];
+      if (!name) return;
+      const key = name.toLowerCase();
+      const subs = d.newTopicSubs[key] ?? [];
+      const pick = await askAction({
+        title: name,
+        body: 'New — gets created when you save the class.',
+        actions: [
+          { value: 'subs', label: subs.length ? `Sub topics (${subs.length})` : 'Add sub topics' },
+          { value: 'remove', label: 'Remove', danger: true },
+        ],
+      });
+      if (pick === 'subs') {
+        const text = await askSubtopics(name, subs);
+        if (text === null) return;
+        d.newTopicSubs[key] = splitList(text);
+      }
+      if (pick === 'remove') {
+        d.newTopicNames.splice(i, 1);
+        delete d.newTopicSubs[key];
+      }
       syncChips();
       return;
     }
@@ -454,6 +563,7 @@ export function wire(root: HTMLElement, route: Route): void {
         what: d.what,
         topicIds: [...d.topicIds],
         newTopicNames,
+        newTopicSubtopics: d.newTopicSubs,
       });
       draft = null;
       draftKey = '';

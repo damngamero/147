@@ -123,6 +123,14 @@ export const PALETTE = [
   '#7c9cff', '#5ecfa8', '#f2a65a', '#e8c05a', '#c07cff', '#57c7e8', '#f2778c',
 ];
 
+/** "a, b\nc" -> ['a', 'b', 'c'] — how sub topics get typed in, one per line or comma-separated. */
+export function splitList(text: string | null | undefined): string[] {
+  return (text ?? '')
+    .split(/[\n,]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 /** A subject's colour, checked — it syncs in from other devices, so it never goes into a style attribute raw. */
 export function subjColor(c: string | undefined): string {
   return c && /^#[0-9a-f]{6}$/i.test(c) ? c : '#8a94a8';

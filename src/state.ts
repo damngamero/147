@@ -156,6 +156,7 @@ export async function addTopic(
   chapterId: ID,
   name: string,
   taughtOn: ISODate | null = null,
+  subtopics: string[] = [],
 ): Promise<Topic> {
   const ch = chapterById(chapterId);
   if (!ch) throw new Error('no such chapter');
@@ -166,6 +167,7 @@ export async function addTopic(
     name: name.trim(),
     isLast: false,
     taughtOn,
+    ...(subtopics.length ? { subtopics } : {}),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -258,12 +260,15 @@ export interface ClassLogInput {
   topicIds: ID[];
   /** names typed into the "topics covered" box that do not exist yet */
   newTopicNames: string[];
+  /** sub topics typed for those new topics, keyed by lower-cased name */
+  newTopicSubtopics?: Record<string, string[]>;
 }
 
 export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
   const created: Topic[] = [];
   for (const name of input.newTopicNames) {
-    if (name.trim()) created.push(await addTopic(input.chapterId, name, input.date));
+    const subs = input.newTopicSubtopics?.[name.trim().toLowerCase()] ?? [];
+    if (name.trim()) created.push(await addTopic(input.chapterId, name, input.date, subs));
   }
   const topicIds = [...input.topicIds, ...created.map((t) => t.id)];
 

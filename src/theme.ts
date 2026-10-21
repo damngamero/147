@@ -18,10 +18,10 @@ export const THEMES: Theme[] = [
     swatch: ['#0e1015', '#1c2230', '#7c9cff'],
   },
   {
-    id: 'paper',
-    name: 'Paper',
-    note: 'Light, for a bright room.',
-    swatch: ['#f6f7fa', '#eef1f6', '#3f62d9'],
+    id: 'neo',
+    name: 'Neo',
+    note: 'Light and loud — thick ink, hard shadows.',
+    swatch: ['#fbf3e4', '#111111', '#ffd23f'],
   },
   {
     id: 'forest',
@@ -39,6 +39,8 @@ export const THEMES: Theme[] = [
 
 export function currentTheme(): string {
   const saved = localStorage.getItem(KEY);
+  // Paper was the light theme until Neo replaced it — keep those devices on the light one.
+  if (saved === 'paper') return 'neo';
   return THEMES.some((t) => t.id === saved) ? saved! : 'midnight';
 }
 
