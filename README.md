@@ -73,6 +73,14 @@ everything reverts. With no last topic flagged, the fallback trigger is every to
 A topic still mid-ladder inside a graduated chapter keeps its remaining 1-4-7 blurts — it just
 never gets a per-class repeat, it drops straight into the chapter blurt when it clears.
 
+**Big chapters come in parts** — a chapter blurt never asks for more than **20 sub topics** at once
+(a topic with no sub topics counts as one). A bigger chapter is packed, in order, into parts of
+whole topics: if the next topic won't fit it goes to the next part instead — a topic is never split.
+Part 2 comes up the day after part 1 is done (or skipped), part 3 the day after that, and the
+three-week gap to the next round counts from the last part. Each part keeps its own ratings, and
+ratings given halfway through a part are saved as you go. A part nobody has started rating yet
+re-packs itself if sub topics change; once a rating is in, it's frozen.
+
 Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 
 ## Builds
@@ -299,6 +307,9 @@ phone app — there is no sync.
 24. **DONE** — a class that clears two two-week repeats graduates to a **monthly** one. The
     two-week gap from phase 22 slowed the growth in daily load; it did not stop it, because a
     class never left that cycle. Now it does, and old material decays out of the way on its own.
+25. **DONE** — **sub topics**, and chapter blurts split into **parts** of at most 20 sub topics,
+    one part a day, each saving its own progress. A 60-topic chapter in one sitting kills the
+    point of blurting.
 
 ## Layout
 

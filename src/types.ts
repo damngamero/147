@@ -49,6 +49,12 @@ export interface Topic {
   isLast: boolean;
   /** date of the class this topic was first taught in */
   taughtOn: ISODate | null;
+  /**
+   * The smaller pieces inside a topic. They are what a chapter blurt's size is
+   * measured in — a part holds at most CHAPTER_PART_MAX_SUBTOPICS of them —
+   * but ratings stay per topic.
+   */
+  subtopics?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -100,6 +106,15 @@ export interface Blurt {
   score: number | null;
   /** topicId -> 1-5 self rating. This is what the weak-spot list is built from. */
   scores: Record<ID, number>;
+  /**
+   * Chapter blurts only: the slice of the chapter this part covers, frozen when
+   * the part is made. A big chapter is split so no single blurt asks for more
+   * than a sitting's worth of recall. Missing on older rows = the whole chapter.
+   */
+  topicIds?: ID[];
+  /** Chapter blurts only: 1-based part within its round, and how many parts the round was planned at. */
+  part?: number;
+  parts?: number;
   /** Drills only: how many questions were worked on this topic. */
   questionsDone?: number;
   /** Drills only: attempts it generally took — 1-4, where 4 means 4+, and 0 means never got it. */

@@ -12,10 +12,10 @@ import {
   updateChapter,
   updateTopic,
 } from '../state';
-import { chapterQualifies, classForTopic, ladderProgress, ladderResolved } from '../schedule';
+import { chapterQualifies, classForTopic, ladderProgress, ladderResolved, syncSchedule } from '../schedule';
 import { askText, confirmBox, onAct, toast } from '../ui';
 import type { Topic } from '../types';
-import { classLabel, esc, fmtDate } from '../util';
+import { CHAPTER_PART_MAX_SUBTOPICS, SUBTOPICS_NEW_UNTIL, classLabel, esc, fmtDate, todayISO } from '../util';
 
 export function render(id: string): string {
   const c = chapterById(id);
@@ -25,10 +25,14 @@ export function render(id: string): string {
   const lastTopic = topics.find((t) => t.isLast) ?? null;
   const logs = logsOf(c.id);
 
+  const isNew = todayISO() < SUBTOPICS_NEW_UNTIL;
+  const newPill = isNew ? ' <span class="pill accent">NEW</span>' : '';
+
   const topicRows = topics
     .map((t) => {
       const log = classForTopic(t.id);
       const p = log ? ladderProgress(log) : null;
+      const subs = t.subtopics ?? [];
       return `
       <div class="row">
         <span class="grow">
@@ -37,7 +41,18 @@ export function render(id: string): string {
             ${t.taughtOn ? `taught ${fmtDate(t.taughtOn)}` : 'not taught in any logged class yet'}
             ${p ? `&middot; its class is ${p.done}/${p.total} through the 1-4-7` : ''}
           </div>
+          ${
+            subs.length
+              ? `<div class="chips" style="margin-top:6px">${subs
+                  .map(
+                    (name, i) => `<button class="pill" style="font:inherit;cursor:pointer" data-act="del-sub" data-id="${t.id}" data-i="${i}"
+                      title="Remove this sub topic">${esc(name)} &times;</button>`,
+                  )
+                  .join('')}</div>`
+              : ''
+          }
         </span>
+        <button class="btn sm ghost" data-act="add-sub" data-id="${t.id}">+ Sub${newPill}</button>
         <button class="btn sm ghost" data-act="mark-last" data-id="${t.id}">${t.isLast ? 'Unmark' : 'Mark last'}</button>
         <button class="btn sm ghost" data-act="rename-topic" data-id="${t.id}">Edit</button>
         <button class="btn sm ghost danger" data-act="del-topic" data-id="${t.id}">&times;</button>
@@ -111,6 +126,14 @@ export function render(id: string): string {
     </div>
 
     <h2>Topics</h2>
+    ${
+      isNew && topics.length
+        ? `<p class="muted small">${newPill.trim()} Sub topics: break a topic into its pieces with
+           <b>+ Sub</b>. Chapter blurts get split into parts of at most ${CHAPTER_PART_MAX_SUBTOPICS}
+           sub topics (a topic without any counts as one), one part a day — a topic is never split
+           across two parts.</p>`
+        : ''
+    }
     ${topics.length ? topicRows : '<div class="empty">No topics yet. They appear here as you log classes, or add them by hand.</div>'}
     <div class="actions" style="margin-top:10px">
       <button class="btn" data-act="add-topic">+ Add topic</button>
@@ -179,6 +202,36 @@ export function wire(root: HTMLElement, id: string): void {
       if (!t) return;
       const name = await askText({ title: 'Rename topic', label: 'Name', value: t.name, okLabel: 'Save' });
       if (name) await updateTopic(tid, { name });
+    }
+
+    if (act === 'add-sub') {
+      const tid = el.dataset.id!;
+      const t = topicsOf(id).find((x) => x.id === tid);
+      if (!t) return;
+      const text = await askText({
+        title: `Sub topics of ${t.name}`,
+        label: 'One per line, or separated by commas',
+        multiline: true,
+        okLabel: 'Add',
+      });
+      const names = (text ?? '')
+        .split(/[\n,]/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (names.length) {
+        await updateTopic(tid, { subtopics: [...(t.subtopics ?? []), ...names] });
+        await syncSchedule();
+        toast(names.length === 1 ? 'Sub topic added' : `${names.length} sub topics added`);
+      }
+    }
+
+    if (act === 'del-sub') {
+      const tid = el.dataset.id!;
+      const t = topicsOf(id).find((x) => x.id === tid);
+      if (!t?.subtopics) return;
+      const i = Number(el.dataset.i);
+      await updateTopic(tid, { subtopics: t.subtopics.filter((_, j) => j !== i) });
+      await syncSchedule();
     }
 
     if (act === 'mark-last') {

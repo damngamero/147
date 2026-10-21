@@ -1,4 +1,4 @@
-import { CYCLE_SHORT, topicsForBlurt } from '../schedule';
+import { CYCLE_SHORT, partLabel, topicsForBlurt } from '../schedule';
 import { chapterById, store, subjectById } from '../state';
 import type { RevisionMethod } from '../types';
 import type { Blurt } from '../types';
@@ -24,7 +24,7 @@ export function labelFor(b: Blurt): BlurtLabel {
   if (b.kind === 'chapter') {
     return {
       title: c?.name ?? '(deleted chapter)',
-      sub: `${s?.name ?? '?'} · whole chapter`,
+      sub: `${s?.name ?? '?'} · ${partLabel(b) || 'whole chapter'}`,
       color: s?.color ?? '#666',
     };
   }

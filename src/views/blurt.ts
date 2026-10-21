@@ -6,6 +6,9 @@ import {
   completeBlurt,
   completeDrill,
   isActionable,
+  partLabel,
+  roundOf,
+  saveDraftScores,
   skipBlurt,
   snoozeBlurt,
   topicsForBlurt,
@@ -74,7 +77,7 @@ function historyHtml(kind: Blurt['kind'], refId: string, currentId: string): str
       (b) => `
       <div class="row">
         <span class="grow">
-          <div class="title">${CYCLE_LABEL[b.cycle]}
+          <div class="title">${CYCLE_LABEL[b.cycle]}${partLabel(b) ? ` · ${partLabel(b)}` : ''}
             <span class="pill ${b.status === 'missed' ? 'warn' : 'good'}">${b.status}</span>
           </div>
           <div class="sub">${b.doneOn ? fmtDate(b.doneOn) : ''}${
@@ -94,6 +97,29 @@ function historyHtml(kind: Blurt['kind'], refId: string, currentId: string): str
       </div>`,
     )
     .join('');
+}
+
+/**
+ * Where this part sits in its round: what earlier parts scored, which one is
+ * up now, and what's still to come. Each part keeps its own progress.
+ */
+function roundStrip(b: Blurt): string {
+  if (!partLabel(b)) return '';
+  const made = roundOf(b);
+  const total = Math.max(b.parts ?? 1, ...made.map((x) => x.parts ?? 1));
+  const chips = Array.from({ length: total }, (_, i) => {
+    const n = i + 1;
+    const x = made.find((m) => (m.part ?? 1) === n);
+    if (x && x.id === b.id) {
+      const rated = Object.keys(scores).length;
+      return `<span class="pill accent">P${n} · now${rated ? ` · ${rated} rated` : ''}</span>`;
+    }
+    if (x?.status === 'done') return `<span class="pill good">P${n} ✓${x.score ? ` ${x.score}/5` : ''}</span>`;
+    if (x?.status === 'missed') return `<span class="pill warn">P${n} skipped</span>`;
+    if (x) return `<span class="pill">P${n} · ${relDay(x.dueDate)}</span>`;
+    return `<span class="pill">P${n} · after P${n - 1}</span>`;
+  });
+  return `<div class="chips" style="margin-bottom:14px">${chips.join('')}</div>`;
 }
 
 /**
@@ -188,7 +214,11 @@ export function render(id: string): string {
     .map(
       (t) => `
       <div class="rate-row">
-        <div class="rate-name">${esc(t.name)}</div>
+        <div class="rate-name">${esc(t.name)}${
+          t.subtopics?.length
+            ? `<div class="dim small">${t.subtopics.map(esc).join(' · ')}</div>`
+            : ''
+        }</div>
         <div class="score">
           ${[1, 2, 3, 4, 5]
             .map(
@@ -216,15 +246,19 @@ export function render(id: string): string {
 
     <div class="chips" style="margin-bottom:14px">
       <span class="pill accent">${CYCLE_LABEL[b.cycle]}</span>
-      <span class="pill">${b.kind === 'chapter' ? 'whole chapter' : 'whole class'}</span>
+      <span class="pill">${b.kind === 'chapter' ? partLabel(b) || 'whole chapter' : 'whole class'}</span>
       <span class="pill">${esc(s?.name ?? '')} · ${esc(c?.name ?? '')}</span>
     </div>
+
+    ${roundStrip(b)}
 
     <div class="card">
       <div class="title">${verb} on paper, all together</div>
       <p class="muted small" style="margin-top:6px">
         ${topics.length} topic${topics.length === 1 ? '' : 's'} from this
-        ${b.kind === 'chapter' ? 'chapter' : 'class'}.
+        ${b.kind === 'chapter' ? 'chapter' : 'class'}${
+          partLabel(b) ? ` — ${partLabel(b)}, the next part comes up the day after you finish this one` : ''
+        }.
         ${
           questions
             ? 'Work through practice questions for each, then come back and say how each one went.'
@@ -234,7 +268,14 @@ export function render(id: string): string {
       <div class="chips">
         ${
           topics.length
-            ? topics.map((t) => `<span class="pill">${esc(t.name)}</span>`).join('')
+            ? topics
+                .map(
+                  (t) =>
+                    `<span class="pill">${esc(t.name)}${
+                      t.subtopics?.length ? ` <span class="dim">(${t.subtopics.length})</span>` : ''
+                    }</span>`,
+                )
+                .join('')
             : '<span class="dim small">No topics recorded for this one.</span>'
         }
       </div>
@@ -296,6 +337,7 @@ export function wire(root: HTMLElement, id: string): void {
       if (scores[topic] === n) delete scores[topic];
       else scores[topic] = n;
       rerender();
+      await saveDraftScores(id, scores);
     }
     if (act === 'reveal') {
       revealed = !revealed;

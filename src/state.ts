@@ -178,7 +178,7 @@ export async function addTopic(
 export async function updateTopic(id: ID, patch: Partial<Topic>): Promise<void> {
   const t = topicById(id);
   if (!t) return;
-  Object.assign(t, patch);
+  Object.assign(t, patch, { updatedAt: Date.now() });
   await db.put('topics', t);
   emit();
 }

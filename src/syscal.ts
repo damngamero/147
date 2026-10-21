@@ -9,7 +9,7 @@
  * Samsung Calendar's calendar list, hideable with one tap, and never mixes
  * with anything else on the device.
  */
-import { CYCLE_LABEL, openBlurts, topicsForBlurt } from './schedule';
+import { CYCLE_LABEL, openBlurts, partLabel, topicsForBlurt } from './schedule';
 import { chapterById, subjectById } from './state';
 import type { Blurt } from './types';
 
@@ -57,7 +57,7 @@ function methodOf(b: Blurt): 'blurt' | 'questions' {
 
 function titleOf(b: Blurt): string {
   const verb = methodOf(b) === 'questions' ? 'Questions' : 'Blurt';
-  if (b.kind === 'chapter') return `${verb}: ${chapterById(b.refId)?.name ?? 'chapter'} (whole chapter)`;
+  if (b.kind === 'chapter') return `${verb}: ${chapterById(b.refId)?.name ?? 'chapter'} (${partLabel(b) || 'whole chapter'})`;
   const names = topicsForBlurt(b).map((t) => t.name);
   if (!names.length) return `${verb}: class`;
   const shown = names.slice(0, 3).join(', ');
@@ -67,10 +67,13 @@ function titleOf(b: Blurt): string {
 function notesOf(b: Blurt): string {
   const subject = subjectById(b.subjectId)?.name ?? '';
   const chapter = chapterById(b.chapterId)?.name ?? '';
-  const names = topicsForBlurt(b).map((t) => `• ${t.name}`);
+  const names = topicsForBlurt(b).flatMap((t) => [
+    `• ${t.name}`,
+    ...(t.subtopics ?? []).map((x) => `    – ${x}`),
+  ]);
   const questions = methodOf(b) === 'questions';
   return [
-    `${CYCLE_LABEL[b.cycle]}${b.kind === 'chapter' ? ' — whole chapter' : ' — whole class, all together'}`,
+    `${CYCLE_LABEL[b.cycle]}${b.kind === 'chapter' ? ` — ${partLabel(b) || 'whole chapter'}` : ' — whole class, all together'}`,
     [subject, chapter].filter(Boolean).join(' / '),
     '',
     ...names,

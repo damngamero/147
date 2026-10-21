@@ -2,6 +2,8 @@ import * as db from './db';
 import { chapterById, emit, logsOf, store, subjectById, topicById, topicsOf } from './state';
 import type { Blurt, BlurtCycle, Chapter, ClassLog, ID, ISODate, Topic } from './types';
 import {
+  CHAPTER_PART_GAP,
+  CHAPTER_PART_MAX_SUBTOPICS,
   CHAPTER_REPEAT_GAP,
   CLASS_REPEAT_GAP,
   CLASS_REPEATS_BEFORE_MONTHLY,
@@ -176,6 +178,46 @@ export function chapterQualifies(ch: Chapter): boolean {
   const last = topicsOf(ch.id).find((t) => t.isLast);
   const lastClass = last ? classForTopic(last.id) : undefined;
   return lastClass ? ladderResolved(lastClass) : logs.every(ladderResolved);
+}
+
+/* ---------- chapter parts ---------- */
+
+/** How much of a part a topic takes up: its sub topics, or one if it has none. */
+export const topicLoad = (t: Topic) => Math.max(1, t.subtopics?.length ?? 0);
+
+/**
+ * Packs what is left of a chapter, in order, into parts of whole topics, each
+ * holding at most CHAPTER_PART_MAX_SUBTOPICS. A topic that would push a part
+ * over goes to the next one instead — rounding down, never splitting a topic.
+ * One topic bigger than the limit on its own still gets a part to itself.
+ * Hands back the first part and how many parts the rest works out to.
+ */
+function planParts(remaining: Topic[]): { next: ID[]; parts: number } {
+  const chunks: ID[][] = [];
+  let load = CHAPTER_PART_MAX_SUBTOPICS;
+  for (const t of remaining) {
+    const w = topicLoad(t);
+    if (load + w > CHAPTER_PART_MAX_SUBTOPICS) {
+      chunks.push([]);
+      load = 0;
+    }
+    chunks.at(-1)!.push(t.id);
+    load += w;
+  }
+  return { next: chunks[0] ?? [], parts: Math.max(1, chunks.length) };
+}
+
+/** Every part of the round this chapter blurt belongs to, in order. */
+export function roundOf(b: Blurt): Blurt[] {
+  if (b.kind !== 'chapter') return [b];
+  return blurtsFor('chapter', b.refId)
+    .filter((x) => x.seq === b.seq)
+    .sort((x, y) => (x.part ?? 1) - (y.part ?? 1));
+}
+
+/** "part 2 of 3" for a split chapter blurt, empty for anything else. */
+export function partLabel(b: Blurt): string {
+  return b.kind === 'chapter' && (b.parts ?? 1) > 1 ? `part ${b.part ?? 1} of ${b.parts}` : '';
 }
 
 /* ---------- sync ---------- */
@@ -379,13 +421,80 @@ export async function syncSchedule(): Promise<void> {
     }
   }
 
-  // Fortnightly chapter blurts.
+  // Fortnightly chapter blurts, split into parts of at most
+  // CHAPTER_PART_MAX_SUBTOPICS. One round of a big chapter is several parts on
+  // consecutive days, each chained off the previous part's resolution; the
+  // next round's three-week gap counts from whenever the LAST part was done.
   for (const ch of store.chapters) {
     if (!ch.fortnightlyFrom || isDrillSubject(ch.subjectId)) continue;
     const mine = blurtsFor('chapter', ch.id);
+    const topics = topicsOf(ch.id);
+
+    // An open part nobody has started rating yet is re-packed against the
+    // chapter as it stands now — so adding sub topics, or a row from before
+    // parts existed that still covers the whole chapter, gets cut to size.
+    // Once a rating is in, the part is frozen so the progress keeps its topics.
+    for (const b of mine) {
+      if (b.status !== 'due' || Object.keys(b.scores ?? {}).length) continue;
+      const part = b.part ?? 1;
+      const earlier = new Set(
+        mine
+          .filter((x) => x.seq === b.seq && (x.part ?? 1) < part)
+          .flatMap((x) => x.topicIds ?? []),
+      );
+      const plan = planParts(topics.filter((t) => !earlier.has(t.id)));
+      const parts = part - 1 + plan.parts;
+      if (
+        b.part === part &&
+        b.parts === parts &&
+        b.topicIds?.length === plan.next.length &&
+        b.topicIds.every((id, i) => id === plan.next[i])
+      ) {
+        continue;
+      }
+      b.topicIds = plan.next;
+      b.part = part;
+      b.parts = parts;
+      b.updatedAt = Date.now();
+      upsert(p, b);
+    }
+
     if (mine.some((b) => b.status === 'due')) continue;
+
+    const round = Math.max(0, ...mine.map((b) => b.seq));
+    const current = mine.filter((b) => b.seq === round);
+    const last = current.sort((a, b) => (a.part ?? 1) - (b.part ?? 1)).at(-1);
+
+    // Mid-round: whatever earlier parts have not covered yet, including any
+    // topic added since the round started.
+    if (last && (last.part ?? 1) < (last.parts ?? 1)) {
+      const covered = new Set(current.flatMap((b) => b.topicIds ?? []));
+      const plan = planParts(topics.filter((t) => !covered.has(t.id)));
+      if (plan.next.length) {
+        const part = (last.part ?? 1) + 1;
+        upsert(
+          p,
+          newBlurt({
+            id: `b_${ch.id}_f${round}_p${part}`,
+            kind: 'chapter',
+            refId: ch.id,
+            subjectId: ch.subjectId,
+            chapterId: ch.id,
+            dueDate: addDays(lastResolvedDate(current) ?? today, CHAPTER_PART_GAP),
+            cycle: 'fortnightly',
+            seq: round,
+            topicIds: plan.next,
+            part,
+            parts: part - 1 + plan.parts,
+          }),
+        );
+        continue;
+      }
+    }
+
     const base = lastResolvedDate(mine) ?? ch.fortnightlyFrom;
-    const seq = mine.length + 1;
+    const seq = round + 1;
+    const plan = planParts(topics);
     upsert(
       p,
       newBlurt({
@@ -397,6 +506,9 @@ export async function syncSchedule(): Promise<void> {
         dueDate: addDays(base, CHAPTER_REPEAT_GAP),
         cycle: 'fortnightly',
         seq,
+        topicIds: plan.next,
+        part: 1,
+        parts: plan.parts,
       }),
     );
   }
@@ -474,7 +586,12 @@ export function topicsForBlurt(b: Blurt): Topic[] {
     const t = topicById(b.refId);
     return t ? [t] : [];
   }
-  if (b.kind === 'chapter') return topicsOf(b.refId);
+  if (b.kind === 'chapter') {
+    const all = topicsOf(b.refId);
+    if (!b.topicIds) return all;
+    const mine = new Set(b.topicIds);
+    return all.filter((t) => mine.has(t.id));
+  }
   const log = store.logs.find((l) => l.id === b.refId);
   if (!log) return [];
   return log.topicIds
@@ -488,6 +605,20 @@ function average(scores: Record<ID, number>): number | null {
   const vals = Object.values(scores);
   if (!vals.length) return null;
   return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+}
+
+/**
+ * Keeps ratings given so far on an unfinished blurt, so walking away halfway
+ * through a part doesn't lose them. Each part is its own row, so P1, P2 and P3
+ * hold their progress separately. Nothing reads scores off an open blurt for
+ * weak spots, so a draft never counts until the part is actually finished.
+ */
+export async function saveDraftScores(id: ID, scores: Record<ID, number>): Promise<void> {
+  const b = blurtById(id);
+  if (!b || b.status !== 'due') return;
+  b.scores = { ...scores };
+  b.updatedAt = Date.now();
+  await db.put('blurts', b);
 }
 
 export async function completeBlurt(

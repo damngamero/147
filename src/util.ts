@@ -72,6 +72,20 @@ export const CLASS_REPEAT_GAP = 14;
 export const CHAPTER_REPEAT_GAP = 21;
 
 /**
+ * A chapter blurt never asks for more than this many sub topics at once (a
+ * topic with no sub topics counts as one). A bigger chapter is split into
+ * parts of whole topics — a topic is never cut in half, so a part stops at
+ * the last topic that still fits rather than spilling over. Each part comes
+ * up PART_GAP days after the one before it was resolved. Blurting 60 things
+ * in one sitting is not recall, it's endurance.
+ */
+export const CHAPTER_PART_MAX_SUBTOPICS = 20;
+export const CHAPTER_PART_GAP = 1;
+
+/** Sub topics are new: the chapter page flags them until this date, then the badge goes away. */
+export const SUBTOPICS_NEW_UNTIL = '2026-11-21';
+
+/**
  * A class does not stay on the two-week repeat forever. Once this many of them
  * have been resolved — two, so a month of holding it — the class drops to a
  * monthly repeat instead. Material you have recalled five separate times over
