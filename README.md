@@ -165,9 +165,12 @@ hook up the `gh` CLI / a GitHub Action later if this gets tedious).
   - **Android**: downloads the attached APK and hands it to the system installer — needs, the
     first time, the "install unknown apps" toggle for 147 specifically, which the app walks you
     to if it's off. `android/.../UpdaterPlugin.java`.
-  - **Desktop**: downloads the installer, runs it silently (`/S`, no wizard, no elevation needed
-    since it's a per-user install), then relaunches itself into the new build automatically.
-    `electron/main.cjs`, `electron/preload.cjs`.
+  - **Desktop**: downloads the installer and quits; a hidden PowerShell waits until every 147
+    process has exited, then runs the installer silently (`/S`, no wizard, no elevation needed
+    since it's a per-user install) with `--force-run`, which reopens the new build when it's done.
+    Starting the installer while 147 was still closing made it silently give up, and without
+    `--force-run` a silent install never reopens the app — together that meant updating twice
+    and reopening by hand. `electron/main.cjs`, `electron/preload.cjs`.
   - `src/update.ts` picks between the two; `src/updateBanner.ts` owns the popup. See "Cutting a
     release" above for how a new version actually reaches this check.
 

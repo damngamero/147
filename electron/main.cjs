@@ -28,9 +28,9 @@ function isNewer(latest, current) {
 // The desktop side of self-update. Unlike the sideloaded APK, the exe can
 // update itself without any user-visible install wizard: the NSIS installer
 // built by electron-builder supports a silent `/S` flag for a per-machine:false
-// (current-user) install, so this downloads it, runs it silently, then hands
-// control back to the exact same exe path via app.relaunch() — which is now
-// the freshly-installed build. userData (where localStorage/IndexedDB live)
+// (current-user) install, so this downloads it, quits, and a helper runs it
+// silently once the app is fully closed — the installer itself then opens
+// the freshly-installed build (see update:install for why it's done that way). userData (where localStorage/IndexedDB live)
 // is a separate folder from the install directory, so the account key and
 // everything else in it survives untouched.
 ipcMain.handle('update:check', async () => {
@@ -74,16 +74,37 @@ ipcMain.handle('update:install', async (_event, url) => {
     // the installer is built with perMachine:false (installs under the
     // current user, not Program Files).
     //
-    // Crucially: this app's own exe is a locked file while it's running, so
-    // the installer cannot overwrite it — and NSIS's silent mode swallows
-    // that failure instead of reporting it, exiting 0 while the actual
-    // binary never got replaced. So: spawn detached and unref'd, then quit
-    // *immediately* to release the lock before the installer gets to that
-    // file. electron-builder's NSIS defaults to launching the freshly
-    // installed app once setup finishes, so nothing has to relaunch it here.
-    const child = spawn(out, ['/S'], { detached: true, stdio: 'ignore' });
+    // Two things go wrong if the installer is simply spawned and the app
+    // quits a moment later:
+    //  - The installer starts while 147 is still shutting down. It finds the
+    //    app running, and in silent mode gives up without a word, so the
+    //    next launch is still the OLD build and the update has to be done
+    //    twice.
+    //  - electron-builder's NSIS only relaunches the app after a SILENT
+    //    install when it is passed --force-run. Without it, setup finishes
+    //    and nothing opens.
+    // So a hidden PowerShell waits for every 147 process to be gone (killing
+    // stragglers after ~20s), then runs the installer with --force-run, which
+    // opens the new build when it's done.
+    const exeName = path.parse(process.execPath).name.replace(/'/g, "''");
+    const installer = out.replace(/'/g, "''");
+    const script = [
+      `Wait-Process -Id ${process.pid} -Timeout 20 -ErrorAction SilentlyContinue`,
+      `$deadline = (Get-Date).AddSeconds(20)`,
+      `while ((Get-Process -Name '${exeName}' -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Milliseconds 250 }`,
+      `Get-Process -Name '${exeName}' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue`,
+      `Start-Sleep -Milliseconds 500`,
+      `Start-Process -FilePath '${installer}' -ArgumentList '/S','--force-run'`,
+    ].join('; ');
+    const child = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', script],
+      { detached: true, stdio: 'ignore', windowsHide: true },
+    );
     child.unref();
 
+    // A normal quit, so localStorage gets flushed to disk; the helper holds
+    // off until every 147 process is actually gone.
     setTimeout(() => app.quit(), 300);
     return { ok: true };
   } catch (err) {

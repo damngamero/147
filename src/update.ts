@@ -152,7 +152,7 @@ export async function installUpdate(update: UpdateInfo): Promise<{ ok: boolean; 
   if (d) {
     const res = await d.install(update.url);
     return res.ok
-      ? { ok: true, message: 'Restarting to finish the update…' }
+      ? { ok: true, message: 'Closing to update — 147 reopens on its own in a few seconds.' }
       : { ok: false, message: res.message ?? 'Install failed.' };
   }
 
