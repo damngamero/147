@@ -480,7 +480,7 @@ pre.code {
 .theme-card .name { font-weight: 600; margin-bottom: 8px; font-size: 14px; }
 .swatches { display: flex; gap: 5px; }
 
-/* Colour pickers: accent in Settings, subject colour on its page. */
+/* Subject colour picker, on the subject's page. */
 .color-picks { display: flex; flex-wrap: wrap; gap: 8px; }
 .color-pick {
   width: 34px; height: 34px; border-radius: 50%; flex: none; cursor: pointer;

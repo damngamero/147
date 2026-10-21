@@ -32,7 +32,7 @@ import {
   syscalStatus,
   syscalSupported,
 } from '../syscal';
-import { ACCENTS, THEMES, currentAccent, currentTheme, setAccent, setTheme } from '../theme';
+import { THEMES, currentTheme, setTheme } from '../theme';
 import { startTour } from '../tour';
 import {
   APP_VERSION,
@@ -86,35 +86,6 @@ function themeCards(): string {
           <div class="sub dim small" style="margin-top:8px">${esc(t.note)}</div>
         </button>`,
       ).join('')}
-    </div>`;
-}
-
-function accentCard(): string {
-  const active = currentAccent();
-  const theme = THEMES.find((t) => t.id === currentTheme()) ?? THEMES[0];
-  return `
-    <div class="card" style="margin-top:12px">
-      <div class="title">Accent colour</div>
-      <p class="muted small" style="margin-top:4px">Buttons, tabs, highlights. Works on top of any
-      theme — the lighter and darker shades are worked out for you.</p>
-      <div class="color-picks" style="margin-top:10px">
-        <button class="color-pick ${active ? '' : 'on'}" data-act="accent" data-color=""
-                style="background:${theme.swatch[2]}" title="${esc(theme.name)} default">
-          ${active ? '' : '&check;'}</button>
-        ${ACCENTS.filter((c) => c !== theme.swatch[2].toLowerCase()).map(
-          (c) => `<button class="color-pick ${active?.toLowerCase() === c ? 'on' : ''}" data-act="accent"
-                    data-color="${c}" style="background:${c}" title="${c}">${
-                      active?.toLowerCase() === c ? '&check;' : ''
-                    }</button>`,
-        ).join('')}
-        <label class="color-pick custom ${active && !ACCENTS.includes(active.toLowerCase()) ? 'on' : ''}" title="Any colour"
-               style="${active && !ACCENTS.includes(active.toLowerCase()) ? `background:${active}` : ''}">
-          +<input type="color" data-f="accent-custom" value="${active ?? theme.swatch[2]}" />
-        </label>
-      </div>
-      <div class="sub dim small" style="margin-top:8px">${
-        active ? `Custom: ${esc(active)} · first swatch goes back to the theme's own` : `Using ${esc(theme.name)}'s own accent`
-      }</div>
     </div>`;
 }
 
@@ -330,7 +301,6 @@ export function render(): string {
 
     <h2>Appearance</h2>
     ${themeCards()}
-    ${accentCard()}
 
     <h2>Cloud sync</h2>
     ${cloudCard()}
@@ -410,15 +380,6 @@ export function render(): string {
 }
 
 export function wire(root: HTMLElement): void {
-  // 'change' fires once the picker closes; 'input' would rerender on every drag.
-  root.addEventListener('change', (e) => {
-    const t = e.target as HTMLInputElement;
-    if (t.dataset.f === 'accent-custom') {
-      setAccent(t.value);
-      rerender();
-    }
-  });
-
   if (syscalSupported() && syscalPermission === null) {
     void syscalHasPermission().then((granted) => {
       syscalPermission = granted;
@@ -493,11 +454,6 @@ export function wire(root: HTMLElement): void {
 
     if (act === 'theme') {
       setTheme(el.dataset.id!);
-      rerender();
-    }
-
-    if (act === 'accent') {
-      setAccent(el.dataset.color || null);
       rerender();
     }
 

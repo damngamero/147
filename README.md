@@ -88,9 +88,6 @@ behind. Tapping a sub topic moves it to another topic in the same chapter, renam
 Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 
 **Colours** — each subject's colour is picked on its page (presets or any colour), and syncs.
-Settings has an accent colour that sits on top of whichever theme is on; its lighter and darker
-shades are mixed from the theme's own background so it stays readable in light and dark. The
-accent is per device, like the theme.
 
 ## Builds
 
