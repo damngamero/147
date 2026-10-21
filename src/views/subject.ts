@@ -9,7 +9,7 @@ import {
 } from '../state';
 import { syncSchedule } from '../schedule';
 import { askText, confirmBox, onAct, toast } from '../ui';
-import { DRILL_PER_DAY, esc } from '../util';
+import { DRILL_PER_DAY, SUBJECT_COLORS, esc } from '../util';
 
 export function render(id: string): string {
   const s = subjectById(id);
@@ -41,6 +41,23 @@ export function render(id: string): string {
     <h1><span class="dot" style="background:${s.color};display:inline-block;margin-right:8px"></span>${esc(s.name)}</h1>
 
     <div class="card">
+      <div class="title">Colour</div>
+      <p class="muted small" style="margin-top:4px">The dot next to ${esc(s.name)} everywhere — Today, the plan, blurts.</p>
+      <div class="color-picks" style="margin-top:10px">
+        ${SUBJECT_COLORS.map(
+          (c) => `<button class="color-pick ${s.color.toLowerCase() === c ? 'on' : ''}" data-act="color"
+                    data-color="${c}" style="background:${c}" title="${c}">${
+                      s.color.toLowerCase() === c ? '&check;' : ''
+                    }</button>`,
+        ).join('')}
+        <label class="color-pick custom ${SUBJECT_COLORS.includes(s.color.toLowerCase()) ? '' : 'on'}" title="Any colour"
+               style="${SUBJECT_COLORS.includes(s.color.toLowerCase()) ? '' : `background:${esc(s.color)}`}">
+          +<input type="color" data-f="subject-color" value="${esc(s.color)}" />
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="setting-row" style="padding-top:0">
         <span class="grow">
           <div class="title">Practise daily instead of blurting</div>
@@ -67,7 +84,17 @@ export function render(id: string): string {
 }
 
 export function wire(root: HTMLElement, id: string): void {
-  onAct(root, async (act) => {
+  root.addEventListener('change', (e) => {
+    const t = e.target as HTMLInputElement;
+    if (t.dataset.f === 'subject-color') void updateSubject(id, { color: t.value });
+  });
+
+  onAct(root, async (act, el) => {
+    if (act === 'color') {
+      await updateSubject(id, { color: el.dataset.color! });
+      return;
+    }
+
     if (act === 'toggle-drill') {
       const s = subjectById(id);
       if (!s) return;
