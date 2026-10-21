@@ -455,7 +455,6 @@ export async function syncSchedule(): Promise<void> {
       b.topicIds = plan.next;
       b.part = part;
       b.parts = parts;
-      b.updatedAt = Date.now();
       upsert(p, b);
     }
 
@@ -617,7 +616,6 @@ export async function saveDraftScores(id: ID, scores: Record<ID, number>): Promi
   const b = blurtById(id);
   if (!b || b.status !== 'due') return;
   b.scores = { ...scores };
-  b.updatedAt = Date.now();
   await db.put('blurts', b);
 }
 

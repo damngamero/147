@@ -28,6 +28,8 @@ interface Draft {
   what: string;
   topicIds: Set<string>;
   newTopicNames: string[];
+  /** Whatever is half-typed in the new-topic box, so a re-render can't eat it. */
+  pendingTopic: string;
 }
 
 /** Session-only, not persisted — searches by class name, topic name, or notes. */
@@ -52,6 +54,7 @@ function blankDraft(chapterId: string): Draft {
     what: '',
     topicIds: new Set(),
     newTopicNames: [],
+    pendingTopic: '',
   };
 }
 
@@ -72,6 +75,7 @@ function ensureDraft(route: Route): Draft {
         what: l.what,
         topicIds: new Set(l.topicIds),
         newTopicNames: [],
+        pendingTopic: '',
       };
       return draft;
     }
@@ -164,7 +168,8 @@ function formHtml(d: Draft): string {
         <label>New topics</label>
         <div class="chip-input">
           <div class="chip-list" data-chips="new-topics">${newTopicChipsHtml(d)}</div>
-          <input type="text" data-f="new-topic-input" placeholder="Type a topic, press Enter to add" />
+          <input type="text" data-f="new-topic-input" value="${esc(d.pendingTopic)}"
+                 placeholder="Type a topic, press Enter to add" />
         </div>
       </div>
 
@@ -284,6 +289,7 @@ export function wire(root: HTMLElement, route: Route): void {
     if (f === 'date') d.date = t.value;
     if (f === 'name') d.name = t.value;
     if (f === 'what') d.what = t.value;
+    if (f === 'new-topic-input') d.pendingTopic = t.value;
     if (f === 'history-search') {
       historySearch = t.value;
       const box = root.querySelector<HTMLElement>('[data-history]');
@@ -331,6 +337,7 @@ export function wire(root: HTMLElement, route: Route): void {
       }
     }
     newTopicInput.value = '';
+    d.pendingTopic = '';
     syncChips();
   };
   newTopicInput?.addEventListener('keydown', (e) => {
@@ -341,9 +348,6 @@ export function wire(root: HTMLElement, route: Route): void {
       d.newTopicNames.pop();
       syncChips();
     }
-  });
-  newTopicInput?.addEventListener('blur', () => {
-    if (newTopicInput.value.trim()) addFromInput();
   });
 
   onAct(root, async (act, el, ev) => {

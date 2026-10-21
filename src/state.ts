@@ -178,7 +178,7 @@ export async function addTopic(
 export async function updateTopic(id: ID, patch: Partial<Topic>): Promise<void> {
   const t = topicById(id);
   if (!t) return;
-  Object.assign(t, patch, { updatedAt: Date.now() });
+  Object.assign(t, patch);
   await db.put('topics', t);
   emit();
 }
@@ -194,6 +194,40 @@ export async function setLastTopic(chapterId: ID, topicId: ID | null): Promise<v
     }
   }
   await db.putMany('topics', changed);
+  emit();
+}
+
+/**
+ * Moves a topic to another chapter. Its ratings and the classes it was ticked
+ * on come with it — those happened, wherever the topic is filed now — but the
+ * "last topic" flag doesn't, because it was the last of the OLD chapter.
+ */
+export async function moveTopic(id: ID, chapterId: ID): Promise<void> {
+  const t = topicById(id);
+  const ch = chapterById(chapterId);
+  if (!t || !ch || t.chapterId === chapterId) return;
+  t.chapterId = ch.id;
+  t.subjectId = ch.subjectId;
+  t.isLast = false;
+  // An open drill row for it should follow it too.
+  const drills = store.blurts.filter((b) => b.kind === 'topic' && b.refId === id && b.status === 'due');
+  for (const b of drills) {
+    b.chapterId = ch.id;
+    b.subjectId = ch.subjectId;
+  }
+  await Promise.all([db.put('topics', t), db.putMany('blurts', drills)]);
+  emit();
+}
+
+/** Moves one sub topic, by position, onto the end of another topic's list. */
+export async function moveSubtopic(fromId: ID, index: number, toId: ID): Promise<void> {
+  const from = topicById(fromId);
+  const to = topicById(toId);
+  if (!from?.subtopics || !to || fromId === toId) return;
+  const [name] = from.subtopics.splice(index, 1);
+  if (name === undefined) return;
+  to.subtopics = [...(to.subtopics ?? []), name];
+  await db.putMany('topics', [from, to]);
   emit();
 }
 

@@ -74,6 +74,49 @@ export function askText(
   });
 }
 
+export interface ChoiceGroup {
+  label: string;
+  options: Array<{ value: string; label: string }>;
+}
+
+/** A dropdown in a modal. Resolves to the picked value, or null if dismissed. */
+export function askChoice(
+  opts: ModalOpts & { label?: string; groups: ChoiceGroup[]; value?: string },
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const groups = opts.groups
+      .filter((g) => g.options.length)
+      .map(
+        (g) => `<optgroup label="${esc(g.label)}">${g.options
+          .map(
+            (o) =>
+              `<option value="${esc(o.value)}" ${o.value === opts.value ? 'selected' : ''}>${esc(o.label)}</option>`,
+          )
+          .join('')}</optgroup>`,
+      )
+      .join('');
+    const back = shell(
+      opts,
+      `<div class="field">${opts.label ? `<label>${esc(opts.label)}</label>` : ''}<select data-x="input">${groups}</select></div>`,
+      opts.danger,
+    );
+    const field = back.querySelector<HTMLSelectElement>('[data-x="input"]')!;
+    const close = (v: string | null) => {
+      back.remove();
+      resolve(v);
+    };
+    back.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t === back || t.dataset.x === 'cancel') close(null);
+      if (t.dataset.x === 'ok') close(field.value || null);
+    });
+    back.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') close(null);
+    });
+    field.focus();
+  });
+}
+
 export function confirmBox(opts: ModalOpts): Promise<boolean> {
   return new Promise((resolve) => {
     const back = shell(opts, '', opts.danger);

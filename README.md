@@ -81,6 +81,10 @@ three-week gap to the next round counts from the last part. Each part keeps its 
 ratings given halfway through a part are saved as you go. A part nobody has started rating yet
 re-packs itself if sub topics change; once a rating is in, it's frozen.
 
+**Moving things** — a topic can move to any other chapter (*Move* on the chapter page); its sub
+topics, ratings and the classes it was ticked on come with it, but the *last topic* flag stays
+behind. Tapping a sub topic moves it to another topic in the same chapter, renames it, or deletes it.
+
 Skipping a blurt counts as resolving it, so a missed day never jams the ladder.
 
 ## Builds
@@ -309,7 +313,9 @@ phone app — there is no sync.
     class never left that cycle. Now it does, and old material decays out of the way on its own.
 25. **DONE** — **sub topics**, and chapter blurts split into **parts** of at most 20 sub topics,
     one part a day, each saving its own progress. A 60-topic chapter in one sitting kills the
-    point of blurting.
+    point of blurting. Topics move between chapters, sub topics between topics. Fixed the
+    new-topic box on the class log eating half-typed words whenever a background sync re-rendered
+    the page.
 
 ## Layout
 

@@ -1,19 +1,23 @@
 import {
   addTopic,
   chapterById,
+  chaptersOf,
   deleteChapter,
   deleteClassLog,
   deleteTopic,
   logById,
   logsOf,
+  moveSubtopic,
+  moveTopic,
   setLastTopic,
+  store,
   subjectById,
   topicsOf,
   updateChapter,
   updateTopic,
 } from '../state';
 import { chapterQualifies, classForTopic, ladderProgress, ladderResolved, syncSchedule } from '../schedule';
-import { askText, confirmBox, onAct, toast } from '../ui';
+import { askChoice, askText, confirmBox, onAct, toast } from '../ui';
 import type { Topic } from '../types';
 import { CHAPTER_PART_MAX_SUBTOPICS, SUBTOPICS_NEW_UNTIL, classLabel, esc, fmtDate, todayISO } from '../util';
 
@@ -34,7 +38,7 @@ export function render(id: string): string {
       const p = log ? ladderProgress(log) : null;
       const subs = t.subtopics ?? [];
       return `
-      <div class="row">
+      <div class="row topic-row">
         <span class="grow">
           <div class="title">${esc(t.name)} ${t.isLast ? '<span class="pill last">last topic</span>' : ''}</div>
           <div class="sub">
@@ -45,17 +49,20 @@ export function render(id: string): string {
             subs.length
               ? `<div class="chips" style="margin-top:6px">${subs
                   .map(
-                    (name, i) => `<button class="pill" style="font:inherit;cursor:pointer" data-act="del-sub" data-id="${t.id}" data-i="${i}"
-                      title="Remove this sub topic">${esc(name)} &times;</button>`,
+                    (name, i) => `<button class="pill" style="font:inherit;cursor:pointer" data-act="sub-menu" data-id="${t.id}" data-i="${i}"
+                      title="Move, rename or delete">${esc(name)} &#9662;</button>`,
                   )
                   .join('')}</div>`
               : ''
           }
         </span>
-        <button class="btn sm ghost" data-act="add-sub" data-id="${t.id}">+ Sub${newPill}</button>
-        <button class="btn sm ghost" data-act="mark-last" data-id="${t.id}">${t.isLast ? 'Unmark' : 'Mark last'}</button>
-        <button class="btn sm ghost" data-act="rename-topic" data-id="${t.id}">Edit</button>
-        <button class="btn sm ghost danger" data-act="del-topic" data-id="${t.id}">&times;</button>
+        <div class="actions">
+          <button class="btn sm ghost" data-act="add-sub" data-id="${t.id}">+ Sub${newPill}</button>
+          <button class="btn sm ghost" data-act="mark-last" data-id="${t.id}">${t.isLast ? 'Unmark' : 'Mark last'}</button>
+          <button class="btn sm ghost" data-act="move-topic" data-id="${t.id}">Move</button>
+          <button class="btn sm ghost" data-act="rename-topic" data-id="${t.id}">Edit</button>
+          <button class="btn sm ghost danger" data-act="del-topic" data-id="${t.id}">&times;</button>
+        </div>
       </div>`;
     })
     .join('');
@@ -225,13 +232,68 @@ export function wire(root: HTMLElement, id: string): void {
       }
     }
 
-    if (act === 'del-sub') {
+    if (act === 'sub-menu') {
       const tid = el.dataset.id!;
       const t = topicsOf(id).find((x) => x.id === tid);
-      if (!t?.subtopics) return;
       const i = Number(el.dataset.i);
-      await updateTopic(tid, { subtopics: t.subtopics.filter((_, j) => j !== i) });
+      const name = t?.subtopics?.[i];
+      if (!t || name === undefined) return;
+      const others = topicsOf(id).filter((x) => x.id !== tid);
+      const pick = await askChoice({
+        title: name,
+        body: `A sub topic of ${t.name}.`,
+        groups: [
+          { label: 'Move to topic', options: others.map((x) => ({ value: `move:${x.id}`, label: `Move to ${x.name}` })) },
+          {
+            label: 'Or',
+            options: [
+              { value: 'rename', label: 'Rename it' },
+              { value: 'delete', label: 'Delete it' },
+            ],
+          },
+        ],
+        okLabel: 'Go',
+      });
+      if (!pick) return;
+      if (pick.startsWith('move:')) {
+        const to = pick.slice(5);
+        await moveSubtopic(tid, i, to);
+        toast(`Moved to ${others.find((x) => x.id === to)?.name ?? 'topic'}`);
+      } else if (pick === 'rename') {
+        const next = await askText({ title: 'Rename sub topic', label: 'Name', value: name, okLabel: 'Save' });
+        if (next) await updateTopic(tid, { subtopics: t.subtopics!.map((x, j) => (j === i ? next : x)) });
+      } else if (pick === 'delete') {
+        await updateTopic(tid, { subtopics: t.subtopics!.filter((_, j) => j !== i) });
+      }
       await syncSchedule();
+    }
+
+    if (act === 'move-topic') {
+      const tid = el.dataset.id!;
+      const t = topicsOf(id).find((x) => x.id === tid);
+      if (!t) return;
+      const groups = store.subjects
+        .filter((s) => !s.archived || s.id === c.subjectId)
+        .map((s) => ({
+          label: s.name,
+          options: chaptersOf(s.id)
+            .filter((ch) => ch.id !== id)
+            .map((ch) => ({ value: ch.id, label: ch.name })),
+        }));
+      if (!groups.some((g) => g.options.length)) {
+        toast('No other chapter to move it to');
+        return;
+      }
+      const to = await askChoice({
+        title: `Move ${t.name}`,
+        body: 'Its sub topics, ratings and the classes it was ticked on come with it.',
+        label: 'To chapter',
+        groups,
+        okLabel: 'Move',
+      });
+      if (!to) return;
+      await moveTopic(tid, to);
+      toast(`Moved to ${chapterById(to)?.name ?? 'chapter'}`);
     }
 
     if (act === 'mark-last') {

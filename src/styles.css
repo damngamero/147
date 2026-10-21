@@ -252,6 +252,9 @@ a { color: var(--accent); }
 .row .title { font-weight: 600; }
 .row .sub { font-size: 13px; color: var(--fg-2); }
 .row .chev { color: var(--fg-3); }
+/* A topic carries five buttons now — they get their own line under the name. */
+.row.topic-row { flex-wrap: wrap; }
+.row.topic-row .grow { flex-basis: 100%; }
 
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 

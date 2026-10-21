@@ -96,6 +96,10 @@ function render(): void {
   main.innerHTML = view.html;
 
   const old = app.querySelector('main');
+  // Background renders (a sync landing, the schedule catching up) fire while
+  // you're typing. Remember which field had the cursor so it can be put back,
+  // or the keyboard drops and the next keystrokes land nowhere.
+  const focused = old ? focusOf(old) : null;
   if (old) old.replaceWith(main);
   else app.appendChild(main);
 
@@ -132,6 +136,32 @@ function render(): void {
   }
 
   view.wire(main);
+  if (focused) restoreFocus(main, focused);
+}
+
+interface Focused {
+  f: string;
+  start: number | null;
+  end: number | null;
+}
+
+function focusOf(root: HTMLElement): Focused | null {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return null;
+  if (!root.contains(el) || !el.dataset.f) return null;
+  return { f: el.dataset.f, start: el.selectionStart, end: el.selectionEnd };
+}
+
+function restoreFocus(root: HTMLElement, at: Focused): void {
+  const el = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-f="${at.f}"]`);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  // Date inputs and the like have no caret to put back.
+  try {
+    if (at.start !== null) el.setSelectionRange(at.start, at.end ?? at.start);
+  } catch {
+    /* not a text field */
+  }
 }
 
 let syncing = false;
