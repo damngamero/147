@@ -452,7 +452,9 @@ export async function syncSchedule(): Promise<void> {
     // parts existed that still covers the whole chapter, gets cut to size.
     // Once a rating is in, the part is frozen so the progress keeps its topics.
     for (const b of mine) {
-      if (b.status !== 'due' || Object.keys(b.scores ?? {}).length) continue;
+      if (b.status !== 'due' || Object.keys(b.scores ?? {}).length || Object.keys(b.subScores ?? {}).length) {
+        continue;
+      }
       const part = b.part ?? 1;
       const earlier = new Set(
         mine
@@ -624,27 +626,45 @@ function average(scores: Record<ID, number>): number | null {
 }
 
 /**
+ * A topic's score from its sub topics: the average, rounded to the nearest
+ * whole number — but only once every one of them has a rating.
+ */
+export function topicScoreFromSubs(names: string[], rated: Record<string, number>): number | null {
+  if (!names.length || names.some((n) => rated[n] === undefined)) return null;
+  return Math.round(names.reduce((sum, n) => sum + rated[n], 0) / names.length);
+}
+
+type SubScores = NonNullable<Blurt['subScores']>;
+
+/**
  * Keeps ratings given so far on an unfinished blurt, so walking away halfway
  * through a part doesn't lose them. Each part is its own row, so P1, P2 and P3
  * hold their progress separately. Nothing reads scores off an open blurt for
  * weak spots, so a draft never counts until the part is actually finished.
  */
-export async function saveDraftScores(id: ID, scores: Record<ID, number>): Promise<void> {
+export async function saveDraftScores(
+  id: ID,
+  scores: Record<ID, number>,
+  subScores: SubScores = {},
+): Promise<void> {
   const b = blurtById(id);
   if (!b || b.status !== 'due') return;
   b.scores = { ...scores };
+  b.subScores = subScores;
   await db.put('blurts', b);
 }
 
 export async function completeBlurt(
   id: ID,
   scores: Record<ID, number> = {},
+  subScores: SubScores = {},
 ): Promise<void> {
   const b = blurtById(id);
   if (!b || !isActionable(b)) return;
   b.status = 'done';
   b.doneOn = todayISO();
   b.scores = scores;
+  b.subScores = subScores;
   b.score = average(scores);
   await db.put('blurts', b);
   await syncSchedule();

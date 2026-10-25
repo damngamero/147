@@ -83,6 +83,11 @@ mis-tap can still be done today. Each part keeps its own ratings, and
 ratings given halfway through a part are saved as you go. A part nobody has started rating yet
 re-packs itself if sub topics change; once a rating is in, it's frozen.
 
+**Rating sub topics** — on the blurt screen a topic with sub topics is rated through them, one
+1-5 per sub topic; the topic's own score (what Weak spots ranks) is their average rounded to the
+nearest whole number, set once every sub topic has one. A topic without sub topics is rated
+directly. Each topic is a card that folds away once it's rated and opens again on a tap.
+
 **Moving things** — a topic can move to any other chapter (*Move* on the chapter page); its sub
 topics, ratings and the classes it was ticked on come with it, but the *last topic* flag stays
 behind. Tapping a sub topic moves it to another topic in the same chapter, renames it, or deletes it.

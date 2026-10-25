@@ -10,10 +10,11 @@ import {
   roundOf,
   saveDraftScores,
   skipBlurt,
+  topicScoreFromSubs,
   snoozeBlurt,
   topicsForBlurt,
 } from '../schedule';
-import { chapterById, store, subjectById } from '../state';
+import { chapterById, store, subjectById, topicById } from '../state';
 import type { Blurt, ID } from '../types';
 import { onAct, toast } from '../ui';
 import { esc, fmtDate, relDay, subjColor } from '../util';
@@ -21,6 +22,10 @@ import { esc, fmtDate, relDay, subjColor } from '../util';
 /** Ratings for the session in progress, per topic. */
 let sessionId = '';
 let scores: Record<ID, number> = {};
+/** Per-sub-topic ratings for the session, topicId -> sub topic name -> 1-5. */
+let subScores: Record<ID, Record<string, number>> = {};
+/** Topics folded shut. A topic folds itself once it's fully rated; tapping its header flips it. */
+let collapsed = new Set<ID>();
 let revealed = false;
 /** Drill session: questions worked, and attempts they took (null until tapped). */
 let drillQuestions = 1;
@@ -31,6 +36,14 @@ function reset(id: string): void {
   sessionId = id;
   const b = blurtById(id);
   scores = { ...(b?.scores ?? {}) };
+  subScores = Object.fromEntries(
+    Object.entries(b?.subScores ?? {}).map(([tid, list]) => [
+      tid,
+      Object.fromEntries(list.map((x) => [x.name, x.score])),
+    ]),
+  );
+  // Anything already rated in a saved draft starts folded, so you land on what's left.
+  collapsed = new Set(Object.keys(scores));
   revealed = false;
   drillQuestions = b?.questionsDone ?? 1;
   drillAttempts = b?.attempts ?? null;
@@ -210,27 +223,49 @@ export function render(id: string): string {
   const questions = c?.method === 'questions';
   const verb = questions ? 'Work practice questions' : 'Blurt these';
 
+  const scoreButtons = (on: number | undefined, attrs: string) =>
+    `<div class="score">${[1, 2, 3, 4, 5]
+      .map(
+        (n) => `<button class="btn sm ${on === n ? 'on' : ''}" ${attrs} data-n="${n}"
+                  title="${SCORE_WORDS[n]}">${n}</button>`,
+      )
+      .join('')}</div>`;
+
   const rows = topics
-    .map(
-      (t) => `
-      <div class="rate-row">
-        <div class="rate-name">${esc(t.name)}${
-          t.subtopics?.length
-            ? `<div class="dim small">${t.subtopics.map(esc).join(' · ')}</div>`
-            : ''
-        }</div>
-        <div class="score">
-          ${[1, 2, 3, 4, 5]
+    .map((t) => {
+      const subs = t.subtopics ?? [];
+      const mine = subScores[t.id] ?? {};
+      const done = scores[t.id] !== undefined;
+      const shut = collapsed.has(t.id);
+      const ratedSubs = subs.filter((n) => mine[n] !== undefined).length;
+      const status = done
+        ? `<span class="pill good">${scores[t.id]}/5 ${SCORE_WORDS[scores[t.id]] ?? ''}</span>`
+        : subs.length
+          ? `<span class="pill">${ratedSubs}/${subs.length} rated</span>`
+          : '';
+      const body = subs.length
+        ? subs
             .map(
-              (n) => `
-            <button class="btn sm ${scores[t.id] === n ? 'on' : ''}"
-                    data-act="score" data-topic="${t.id}" data-n="${n}"
-                    title="${SCORE_WORDS[n]}">${n}</button>`,
+              (name, i) => `
+              <div class="rate-row">
+                <div class="rate-name">${esc(name)}</div>
+                ${scoreButtons(mine[name], `data-act="sub-score" data-topic="${t.id}" data-i="${i}"`)}
+              </div>`,
             )
-            .join('')}
-        </div>
-      </div>`,
-    )
+            .join('')
+        : `<div class="rate-row solo">${scoreButtons(scores[t.id], `data-act="score" data-topic="${t.id}"`)}</div>`;
+      return `
+      <div class="rate-topic ${done ? 'done' : ''} ${shut ? 'shut' : ''}">
+        <button type="button" class="rate-head" data-act="toggle-topic" data-topic="${t.id}">
+          <span class="chev-sm">${shut ? '&#9656;' : '&#9662;'}</span>
+          <span class="grow">${esc(t.name)}${
+            subs.length ? ` <span class="dim small">· ${subs.length} sub topic${subs.length === 1 ? '' : 's'}</span>` : ''
+          }</span>
+          ${status}
+        </button>
+        ${shut ? '' : `<div class="rate-body">${body}</div>`}
+      </div>`;
+    })
     .join('');
 
   return `
@@ -283,8 +318,9 @@ export function render(id: string): string {
 
     <div class="card">
       <div class="title">How did each go?</div>
-      <p class="muted small" style="margin-top:6px">1 = blank, 5 = nailed it. This is what builds
-      your weak-spot list — it is the only thing the app needs from you.</p>
+      <p class="muted small" style="margin-top:6px">1 = blank, 5 = nailed it. A topic with sub topics is
+      rated through them — it gets their average, rounded. Rated topics fold away; tap one to open it
+      again. This builds your weak-spot list — it is the only thing the app needs from you.</p>
       ${topics.length ? `<div class="rate-list">${rows}</div>` : ''}
 
       <div class="actions" style="margin-top:16px">
@@ -310,7 +346,19 @@ export function render(id: string): string {
     ${historyHtml(b.kind, b.refId, b.id)}`;
 }
 
+/** Session sub ratings -> the stored shape: a list of {name, score} per topic, empty topics dropped. */
+function subScoresForSave(): NonNullable<Blurt['subScores']> {
+  const out: NonNullable<Blurt['subScores']> = {};
+  for (const [tid, map] of Object.entries(subScores)) {
+    const list = Object.entries(map).map(([name, score]) => ({ name, score }));
+    if (list.length) out[tid] = list;
+  }
+  return out;
+}
+
 export function wire(root: HTMLElement, id: string): void {
+  const saveDraft = () => saveDraftScores(id, scores, subScoresForSave());
+
   root.addEventListener('input', (e) => {
     const t = e.target as HTMLInputElement;
     if (t.dataset.f === 'drill-questions') {
@@ -335,16 +383,44 @@ export function wire(root: HTMLElement, id: string): void {
       const topic = el.dataset.topic!;
       const n = Number(el.dataset.n);
       if (scores[topic] === n) delete scores[topic];
-      else scores[topic] = n;
+      else {
+        scores[topic] = n;
+        collapsed.add(topic);
+      }
       rerender();
-      await saveDraftScores(id, scores);
+      await saveDraft();
+    }
+    if (act === 'sub-score') {
+      const topic = el.dataset.topic!;
+      const t = topicById(topic);
+      const name = t?.subtopics?.[Number(el.dataset.i)];
+      if (!t?.subtopics || name === undefined) return;
+      const n = Number(el.dataset.n);
+      const mine = (subScores[topic] ??= {});
+      if (mine[name] === n) delete mine[name];
+      else mine[name] = n;
+      const derived = topicScoreFromSubs(t.subtopics, mine);
+      if (derived === null) delete scores[topic];
+      else {
+        // Last sub topic in — fold it away so the next topic is in view.
+        if (scores[topic] === undefined) collapsed.add(topic);
+        scores[topic] = derived;
+      }
+      rerender();
+      await saveDraft();
+    }
+    if (act === 'toggle-topic') {
+      const topic = el.dataset.topic!;
+      if (collapsed.has(topic)) collapsed.delete(topic);
+      else collapsed.add(topic);
+      rerender();
     }
     if (act === 'reveal') {
       revealed = !revealed;
       rerender();
     }
     if (act === 'save') {
-      await completeBlurt(id, scores);
+      await completeBlurt(id, scores, subScoresForSave());
       sessionId = '';
       toast('Logged');
       location.hash = '#/today';

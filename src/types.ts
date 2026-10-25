@@ -107,6 +107,13 @@ export interface Blurt {
   /** topicId -> 1-5 self rating. This is what the weak-spot list is built from. */
   scores: Record<ID, number>;
   /**
+   * topicId -> a 1-5 rating per sub topic. A topic with sub topics is rated
+   * through them and its entry in `scores` is their average, rounded. A list
+   * of pairs rather than a map keyed by name, so nothing a user types ever
+   * ends up as a Firestore field name.
+   */
+  subScores?: Record<ID, Array<{ name: string; score: number }>>;
+  /**
    * Chapter blurts only: the slice of the chapter this part covers, frozen when
    * the part is made. A big chapter is split so no single blurt asks for more
    * than a sitting's worth of recall. Missing on older rows = the whole chapter.

@@ -573,7 +573,17 @@ pre.code {
 
 /* ---------- per-topic rating ---------- */
 
-.rate-list { margin-top: 12px; }
+.rate-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.rate-topic { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-3); }
+.rate-topic.done { border-color: var(--good-line); }
+.rate-head {
+  width: 100%; display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left;
+  background: none; border: 0; padding: 11px 12px; color: var(--fg); font: inherit; font-weight: 600;
+}
+.rate-head .grow { flex: 1; min-width: 0; }
+.chev-sm { color: var(--fg-3); width: 12px; flex: none; }
+.rate-body { padding: 0 12px 6px; border-top: 1px solid var(--line); }
+.rate-row.solo { justify-content: flex-end; }
 .rate-row {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 10px 0; border-bottom: 1px solid var(--line);
@@ -647,3 +657,6 @@ pre.code {
 [data-theme='neo'] .subj-pick.on .dot { background: var(--ink) !important; }
 [data-theme='neo'] .color-pick { box-shadow: 0 0 0 2px var(--ink); }
 [data-theme='neo'] .score button.on { box-shadow: 2px 2px 0 var(--ink); }
+[data-theme='neo'] .rate-topic { border: 2px solid var(--ink); background: var(--bg-2); }
+[data-theme='neo'] .rate-topic.done { background: var(--good-bg); }
+[data-theme='neo'] .rate-body { border-top: 2px solid var(--ink); }
