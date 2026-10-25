@@ -741,6 +741,42 @@ export async function snoozeBlurt(id: ID, days = 1): Promise<void> {
 
 /* ---------- weak spots ---------- */
 
+export interface SubScore {
+  name: string;
+  /** null = this sub topic has never been rated */
+  latest: number | null;
+  average: number | null;
+  times: number;
+}
+
+/**
+ * Every sub topic of a topic with its own rating history, weakest first and
+ * never-rated last. Ratings are matched by name, so a renamed sub topic
+ * starts fresh.
+ */
+export function subScoresOf(topic: Topic): SubScore[] {
+  const hist = new Map<string, Array<{ score: number; on: ISODate }>>();
+  for (const b of store.blurts) {
+    if (b.status !== 'done') continue;
+    for (const x of b.subScores?.[topic.id] ?? []) {
+      if (!hist.has(x.name)) hist.set(x.name, []);
+      hist.get(x.name)!.push({ score: x.score, on: b.doneOn ?? b.dueDate });
+    }
+  }
+  return (topic.subtopics ?? [])
+    .map((name) => {
+      const list = (hist.get(name) ?? []).sort((a, b) => b.on.localeCompare(a.on));
+      const total = list.reduce((sum, x) => sum + x.score, 0);
+      return {
+        name,
+        latest: list[0]?.score ?? null,
+        average: list.length ? Math.round((total / list.length) * 10) / 10 : null,
+        times: list.length,
+      };
+    })
+    .sort((a, b) => (a.latest ?? 99) - (b.latest ?? 99) || (a.average ?? 99) - (b.average ?? 99));
+}
+
 export interface TopicScore {
   topic: Topic;
   latest: number;

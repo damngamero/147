@@ -1,5 +1,6 @@
 import { rerender } from '../app';
-import { classForTopic, ladderProgress, topicScores } from '../schedule';
+import { classForTopic, ladderProgress, subScoresOf, topicScores } from '../schedule';
+import type { Topic } from '../types';
 import { chapterById, store, subjectById } from '../state';
 import { onAct } from '../ui';
 import { codedStyle, esc, fmtDate, subjTag } from '../util';
@@ -15,6 +16,19 @@ const WORD: Record<number, string> = {
   5: 'nailed it',
 };
 
+/** A topic's sub topics with their own ratings, as chips under the row. */
+function subsHtml(t: Topic): string {
+  if (!t.subtopics?.length) return '';
+  const chips = subScoresOf(t)
+    .map((x) =>
+      x.latest === null
+        ? `<span class="pill">${esc(x.name)} · not rated</span>`
+        : `<span class="pill ${BAND(x.latest)}" title="rated ${x.times}×, average ${x.average}/5">${esc(x.name)} · ${x.latest}/5</span>`,
+    )
+    .join('');
+  return `<div class="chips sub-chips">${chips}</div>`;
+}
+
 function matches(text: string): boolean {
   return !query || text.toLowerCase().includes(query.toLowerCase());
 }
@@ -23,7 +37,7 @@ function weakHtml(): string {
   const scores = topicScores().filter((s) => {
     const c = chapterById(s.topic.chapterId);
     const sub = subjectById(s.topic.subjectId);
-    return matches(`${s.topic.name} ${c?.name ?? ''} ${sub?.name ?? ''}`);
+    return matches(`${s.topic.name} ${(s.topic.subtopics ?? []).join(' ')} ${c?.name ?? ''} ${sub?.name ?? ''}`);
   });
 
   if (!scores.length) {
@@ -48,6 +62,7 @@ function weakHtml(): string {
               s.lastOn ? ` · last ${fmtDate(s.lastOn)}` : ''
             }
           </div>
+          ${subsHtml(s.topic)}
         </span>
         <span class="pill ${BAND(s.latest)}">${s.latest}/5 ${WORD[s.latest] ?? ''}</span>
       </a>`;
@@ -64,7 +79,7 @@ function untestedHtml(): string {
     .filter((t) => {
       const c = chapterById(t.chapterId);
       const sub = subjectById(t.subjectId);
-      return matches(`${t.name} ${c?.name ?? ''} ${sub?.name ?? ''}`);
+      return matches(`${t.name} ${(t.subtopics ?? []).join(' ')} ${c?.name ?? ''} ${sub?.name ?? ''}`);
     })
     .map((t) => {
       const sub = subjectById(t.subjectId);
@@ -76,6 +91,7 @@ function untestedHtml(): string {
         <span class="grow">
           <div class="title">${esc(t.name)}</div>
           <div class="sub">${subjTag(sub?.name, sub?.color)} ${esc(c?.name ?? '?')} · class 1-4-7 ${p.done}/${p.total}</div>
+          ${subsHtml(t)}
         </span>
         <span class="pill">not rated yet</span>
       </a>`;

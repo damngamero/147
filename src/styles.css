@@ -276,6 +276,9 @@ a { color: var(--accent); }
 .pill.good { background: var(--good-bg); color: var(--good); border-color: var(--good-line); }
 .pill.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-line); }
 .pill.last { background: var(--special-bg); color: var(--special); border-color: var(--special-line); }
+.pill.bad { background: var(--late-bg); color: var(--bad); border-color: var(--late-line); }
+.sub-chips { margin-top: 6px; gap: 5px; }
+.sub-chips .pill { font-weight: 500; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
