@@ -1,7 +1,9 @@
-const { app, BrowserWindow, shell, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, net, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 
 // Windows needs this to group and pin the app against a stable identity.
 app.setAppUserModelId('com.devil.app147');
@@ -35,7 +37,10 @@ function isNewer(latest, current) {
 // everything else in it survives untouched.
 ipcMain.handle('update:check', async () => {
   try {
-    const res = await fetch(UPDATE_API, { headers: { Accept: 'application/vnd.github+json' } });
+    const res = await net.fetch(UPDATE_API, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-store',
+    });
     if (!res.ok) {
       return { ok: false, update: null, message: `GitHub said ${res.status} — no release found yet?` };
     }
@@ -62,14 +67,87 @@ ipcMain.handle('update:check', async () => {
   }
 });
 
-ipcMain.handle('update:install', async (_event, url) => {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Download failed (${res.status}).`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    const out = path.join(app.getPath('temp'), '147-update-installer.exe');
-    fs.writeFileSync(out, buf);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Downloads the installer to `out`, retrying what is worth retrying.
+ *
+ * The old version did one plain fetch and buffered the whole ~110 MB exe in
+ * memory, so a single hiccup on GitHub's asset CDN — a 502/503/504, a reset
+ * connection, a transfer cut short — killed the update outright ("Download
+ * failed (504)"). Those are transient; a 404 is not. So: Electron's own
+ * network stack (net.fetch — follows the system proxy, unlike Node's fetch),
+ * streamed straight to a .part file, checked against Content-Length, renamed
+ * into place only once whole, with up to five tries backing off 2-4-8-16s.
+ */
+async function downloadInstaller(url, out) {
+  const part = `${out}.part`;
+  let last = new Error('Download failed.');
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt) await sleep(2000 * 2 ** (attempt - 1));
+    let res;
+    try {
+      res = await net.fetch(url, { cache: 'no-store' });
+    } catch (err) {
+      last = err instanceof Error ? err : new Error(String(err));
+      continue; // network error: worth another go
+    }
+    if (!res.ok) {
+      last = new Error(`Download failed (${res.status}).`);
+      if (res.status >= 500 || res.status === 429 || res.status === 408) continue;
+      throw last; // 404 and friends won't fix themselves
+    }
+    try {
+      await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(part));
+      const expected = Number(res.headers.get('content-length')) || 0;
+      const got = fs.statSync(part).size;
+      if (expected && got !== expected) {
+        last = new Error(`Download cut off (${got} of ${expected} bytes).`);
+        continue;
+      }
+      fs.rmSync(out, { force: true });
+      fs.renameSync(part, out);
+      return;
+    } catch (err) {
+      last = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+  fs.rmSync(part, { force: true });
+  throw last;
+}
+
+/**
+ * Closes 147 for real. app.quit() is a request — a window can hold it up and
+ * leave the app half-alive, so the installer finds it running and silently
+ * gives up. Storage is flushed by hand first (that is what the polite quit was
+ * for), then every window is destroyed and the process exits outright.
+ */
+function forceExit() {
+  try {
+    session.defaultSession.flushStorageData();
+  } catch {
+    /* nothing to flush */
+  }
+  for (const w of BrowserWindow.getAllWindows()) w.destroy();
+  app.exit(0);
+}
+
+ipcMain.handle('update:install', async (_event, url) => {
+  const out = path.join(app.getPath('temp'), '147-update-installer.exe');
+  try {
+    await downloadInstaller(url, out);
+  } catch (err) {
+    // Still stuck after the retries: hand the download to the browser, so the
+    // update is one double-click away instead of a dead end.
+    shell.openExternal(url);
+    const why = err && err.message ? err.message : String(err);
+    return {
+      ok: false,
+      message: `${why} Opened the installer download in your browser instead — run it once it finishes.`,
+    };
+  }
+
+  try {
     // /S = silent NSIS install, no wizard. Works without elevation because
     // the installer is built with perMachine:false (installs under the
     // current user, not Program Files).
@@ -103,9 +181,9 @@ ipcMain.handle('update:install', async (_event, url) => {
     );
     child.unref();
 
-    // A normal quit, so localStorage gets flushed to disk; the helper holds
-    // off until every 147 process is actually gone.
-    setTimeout(() => app.quit(), 300);
+    // Storage is flushed inside forceExit; the helper still waits for every
+    // 147 process to be gone (and kills stragglers) before it installs.
+    setTimeout(forceExit, 300);
     return { ok: true };
   } catch (err) {
     return { ok: false, message: err && err.message ? err.message : String(err) };

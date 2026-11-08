@@ -181,7 +181,11 @@ hook up the `gh` CLI / a GitHub Action later if this gets tedious).
   - **Android**: downloads the attached APK and hands it to the system installer — needs, the
     first time, the "install unknown apps" toggle for 147 specifically, which the app walks you
     to if it's off. `android/.../UpdaterPlugin.java`.
-  - **Desktop**: downloads the installer and quits; a hidden PowerShell waits until every 147
+  - **Desktop**: downloads the installer (streamed to disk through Electron's own network stack,
+    up to five tries backing off 2-4-8-16s on a 5xx, a dropped connection or a short transfer;
+    if it still fails the download opens in the browser instead) and then force-exits — storage
+    flushed by hand, windows destroyed, `app.exit` — because a polite `app.quit()` could leave
+    147 half-running, which the installer treats as "in use" and gives up on. A hidden PowerShell waits until every 147
     process has exited, then runs the installer silently (`/S`, no wizard, no elevation needed
     since it's a per-user install) with `--force-run`, which reopens the new build when it's done.
     Starting the installer while 147 was still closing made it silently give up, and without
@@ -345,6 +349,9 @@ phone app — there is no sync.
     through the chapter, because topics were sorted by when the row happened to be created —
     which drifts from class order once classes are logged late or backdated. An unstarted
     chapter part re-packs itself on the next sync, so it fixes itself without a manual refresh.
+27. **DONE** — desktop self-update that actually lands: a GitHub CDN 504 on the installer download
+    no longer kills the update (retries, streamed, size-checked, browser fallback), and 147 now
+    closes itself outright before the installer runs instead of asking politely and lingering.
 
 ## Layout
 
