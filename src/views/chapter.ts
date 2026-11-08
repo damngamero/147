@@ -1,3 +1,4 @@
+import { rerender } from '../app';
 import {
   addTopic,
   chapterById,
@@ -9,7 +10,10 @@ import {
   logsOf,
   moveSubtopic,
   moveTopic,
+  resetTopicOrder,
   setLastTopic,
+  shiftSubtopic,
+  shiftTopic,
   store,
   subjectById,
   topicsOf,
@@ -31,6 +35,15 @@ import {
   todayISO,
 } from '../util';
 
+/** Which chapter's page is in Reorder mode, if any. Not saved — just a view toggle. */
+let reorderingId = '';
+
+const arrows = (act: string, attrs: string, first: boolean, last: boolean) => `
+  <button class="btn sm ghost" data-act="${act}" data-dir="-1" ${attrs} ${first ? 'disabled' : ''}
+          title="Move earlier" aria-label="Move earlier">&uarr;</button>
+  <button class="btn sm ghost" data-act="${act}" data-dir="1" ${attrs} ${last ? 'disabled' : ''}
+          title="Move later" aria-label="Move later">&darr;</button>`;
+
 export function render(id: string): string {
   const c = chapterById(id);
   if (!c) return '<div class="empty">Chapter not found.</div>';
@@ -42,21 +55,41 @@ export function render(id: string): string {
   const isNew = todayISO() < SUBTOPICS_NEW_UNTIL;
   const newPill = isNew ? ' <span class="pill accent">NEW</span>' : '';
 
+  const reordering = reorderingId === c.id;
+  const customOrder = !!c.topicOrder?.length;
+
   const topicRows = topics
-    .map((t) => {
+    .map((t, ti) => {
       const log = classForTopic(t.id);
       const p = log ? ladderProgress(log) : null;
       const subs = t.subtopics ?? [];
       return `
       <div class="row topic-row coded" ${codedStyle(s?.color)}>
         <span class="grow">
-          <div class="title">${esc(t.name)} ${t.isLast ? '<span class="pill last">last topic</span>' : ''}</div>
+          ${
+            reordering
+              ? `<div class="title" style="display:flex;align-items:center;gap:4px">
+                   <span style="flex:1;min-width:0">${ti + 1}. ${esc(t.name)}</span>
+                   ${arrows('shift-topic', `data-id="${t.id}"`, ti === 0, ti === topics.length - 1)}
+                 </div>`
+              : `<div class="title">${esc(t.name)} ${t.isLast ? '<span class="pill last">last topic</span>' : ''}</div>`
+          }
           <div class="sub">
             ${t.taughtOn ? `taught ${fmtDate(t.taughtOn)}` : 'not taught in any logged class yet'}
             ${p ? `&middot; its class is ${p.done}/${p.total} through the 1-4-7` : ''}
           </div>
           ${
-            subs.length
+            subs.length && reordering
+              ? `<div style="margin-top:6px">${subs
+                  .map(
+                    (name, i) => `
+                    <div style="display:flex;align-items:center;gap:4px;margin-top:4px;padding-left:12px">
+                      <span class="pill" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i + 1}. ${esc(name)}</span>
+                      ${arrows('shift-sub', `data-id="${t.id}" data-i="${i}"`, i === 0, i === subs.length - 1)}
+                    </div>`,
+                  )
+                  .join('')}</div>`
+              : subs.length
               ? `<div class="chips" style="margin-top:6px">${subs
                   .map(
                     (name, i) => `<button class="pill" style="font:inherit;cursor:pointer" data-act="sub-menu" data-id="${t.id}" data-i="${i}"
@@ -66,13 +99,17 @@ export function render(id: string): string {
               : ''
           }
         </span>
-        <div class="actions">
+        ${
+          reordering
+            ? ''
+            : `<div class="actions">
           <button class="btn sm ghost" data-act="add-sub" data-id="${t.id}">+ Sub${newPill}</button>
           <button class="btn sm ghost" data-act="mark-last" data-id="${t.id}">${t.isLast ? 'Unmark' : 'Mark last'}</button>
           <button class="btn sm ghost" data-act="move-topic" data-id="${t.id}">Move</button>
           <button class="btn sm ghost" data-act="rename-topic" data-id="${t.id}">Edit</button>
           <button class="btn sm ghost danger" data-act="del-topic" data-id="${t.id}">&times;</button>
-        </div>
+        </div>`
+        }
       </div>`;
     })
     .join('');
@@ -144,6 +181,27 @@ export function render(id: string): string {
 
     <h2>Topics</h2>
     ${
+      topics.length > 1 || topics.some((t) => (t.subtopics?.length ?? 0) > 1)
+        ? `<div class="actions" style="margin-bottom:10px">
+             <span class="pill ${customOrder ? 'accent' : ''}">${customOrder ? 'your order' : 'class order'}</span>
+             <span class="spacer"></span>
+             ${
+               customOrder
+                 ? '<button class="btn sm ghost" data-act="reset-order" title="Go back to the order they were taught in">Back to class order</button>'
+                 : ''
+             }
+             <button class="btn sm ${reordering ? 'primary' : ''}" data-act="toggle-reorder">
+               ${reordering ? 'Done' : 'Reorder'}
+             </button>
+           </div>
+           ${
+             reordering
+               ? '<p class="muted small">Use the arrows to set the order topics and sub topics come up in. This overrides the class dates, for the chapter page and chapter blurts both.</p>'
+               : ''
+           }`
+        : ''
+    }
+    ${
       isNew && topics.length
         ? `<p class="muted small">${newPill.trim()} Sub topics: break a topic into its pieces with
            <b>+ Sub</b>. Chapter blurts get split into parts of at most ${CHAPTER_PART_MAX_SUBTOPICS}
@@ -196,6 +254,37 @@ export function wire(root: HTMLElement, id: string): void {
       if (yes) {
         await deleteClassLog(logId);
         toast('Class unlogged');
+      }
+      return;
+    }
+
+    if (act === 'toggle-reorder') {
+      reorderingId = reorderingId === id ? '' : id;
+      rerender();
+      return;
+    }
+
+    if (act === 'shift-topic') {
+      await shiftTopic(id, el.dataset.id!, Number(el.dataset.dir) as -1 | 1);
+      await syncSchedule(); // an unstarted chapter part re-packs to the new order
+      return;
+    }
+
+    if (act === 'shift-sub') {
+      await shiftSubtopic(el.dataset.id!, Number(el.dataset.i), Number(el.dataset.dir) as -1 | 1);
+      return;
+    }
+
+    if (act === 'reset-order') {
+      const yes = await confirmBox({
+        title: 'Back to class order?',
+        body: 'Topics go back to the order they were taught in. Sub topic order stays as you set it.',
+        okLabel: 'Reset',
+      });
+      if (yes) {
+        await resetTopicOrder(id);
+        await syncSchedule();
+        toast('Back to class order');
       }
       return;
     }

@@ -36,6 +36,13 @@ export interface Chapter {
   finishedAt: number | null;
   /** set once the chapter graduates to the fortnightly cycle */
   fortnightlyFrom: ISODate | null;
+  /**
+   * A hand-set topic order from the chapter page's Reorder mode. Overrides the
+   * taught-date order everywhere topicsOf is used (chapter page, chapter blurt
+   * parts). Topics not in it — added since — follow on in taught order. Absent
+   * means plain taught order.
+   */
+  topicOrder?: ID[];
   createdAt: number;
   updatedAt: number;
 }

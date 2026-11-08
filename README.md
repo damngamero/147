@@ -352,6 +352,10 @@ phone app — there is no sync.
 27. **DONE** — desktop self-update that actually lands: a GitHub CDN 504 on the installer download
     no longer kills the update (retries, streamed, size-checked, browser fallback), and 147 now
     closes itself outright before the installer runs instead of asking politely and lingering.
+28. **DONE** — **Reorder** on the chapter page: arrows to set the order of topics and of the sub
+    topics inside each one. A hand-set topic order overrides the taught-date order everywhere —
+    chapter page and chapter blurt parts — and topics added afterwards follow on at the end.
+    **Back to class order** drops it again.
 
 ## Layout
 

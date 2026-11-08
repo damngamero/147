@@ -101,8 +101,45 @@ export function inTaughtOrder(topics: Topic[]): Topic[] {
   });
 }
 
-export const topicsOf = (chapterId: ID) =>
-  inTaughtOrder(store.topics.filter((t) => t.chapterId === chapterId));
+/**
+ * A chapter's topics: the hand-set order if the chapter has one, else taught
+ * order. Topics the hand-set order doesn't mention yet (added since) follow on
+ * after it, in taught order — new material lands at the end, where it belongs.
+ */
+export function topicsOf(chapterId: ID): Topic[] {
+  const taught = inTaughtOrder(store.topics.filter((t) => t.chapterId === chapterId));
+  const manual = chapterById(chapterId)?.topicOrder;
+  if (!manual?.length) return taught;
+  const pos = new Map(manual.map((id, i) => [id, i]));
+  const listed = taught.filter((t) => pos.has(t.id)).sort((a, b) => pos.get(a.id)! - pos.get(b.id)!);
+  return [...listed, ...taught.filter((t) => !pos.has(t.id))];
+}
+
+/** Nudges a topic one place earlier (-1) or later (+1), saving the whole order. */
+export async function shiftTopic(chapterId: ID, topicId: ID, delta: -1 | 1): Promise<void> {
+  const ids = topicsOf(chapterId).map((t) => t.id);
+  const i = ids.indexOf(topicId);
+  const j = i + delta;
+  if (i === -1 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  await updateChapter(chapterId, { topicOrder: ids });
+}
+
+/** Drops the hand-set order, back to the order the topics were taught in. */
+export async function resetTopicOrder(chapterId: ID): Promise<void> {
+  // An empty list, not undefined: Firestore's setDoc rejects undefined fields.
+  await updateChapter(chapterId, { topicOrder: [] });
+}
+
+/** Nudges a sub topic one place earlier (-1) or later (+1) inside its topic. */
+export async function shiftSubtopic(topicId: ID, index: number, delta: -1 | 1): Promise<void> {
+  const t = topicById(topicId);
+  const subs = t?.subtopics ? [...t.subtopics] : null;
+  const j = index + delta;
+  if (!t || !subs || index < 0 || index >= subs.length || j < 0 || j >= subs.length) return;
+  [subs[index], subs[j]] = [subs[j], subs[index]];
+  await updateTopic(topicId, { subtopics: subs });
+}
 
 export const logsOf = (chapterId: ID) =>
   store.logs.filter((l) => l.chapterId === chapterId).sort((a, b) => b.date.localeCompare(a.date));
