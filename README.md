@@ -340,6 +340,11 @@ phone app — there is no sync.
     point of blurting. Topics move between chapters, sub topics between topics. Fixed the
     new-topic box on the class log eating half-typed words whenever a background sync re-rendered
     the page.
+26. **DONE** — topics list in the order they were **taught**: by the date of the first class that
+    covered them, then their order within that class. A chapter blurt used to open partway
+    through the chapter, because topics were sorted by when the row happened to be created —
+    which drifts from class order once classes are logged late or backdated. An unstarted
+    chapter part re-packs itself on the next sync, so it fixes itself without a manual refresh.
 
 ## Layout
 

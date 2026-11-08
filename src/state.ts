@@ -56,8 +56,53 @@ export const logById = (id: ID) => store.logs.find((l) => l.id === id);
 export const chaptersOf = (subjectId: ID) =>
   store.chapters.filter((c) => c.subjectId === subjectId).sort((a, b) => a.order - b.order);
 
+/**
+ * Topics in the order they were taught: by the date of the first class that
+ * covered them, then the order they were listed in that class. A raw
+ * createdAt sort drifts from that — classes get logged late or backdated,
+ * topics typed in together can share a millisecond (and IndexedDB hands them
+ * back in random-id order), and a chapter blurt that jumps around the chapter
+ * breaks the front-to-back flow it is meant to rebuild. Topics no logged class
+ * covers yet fall back to taughtOn, then to when they were created.
+ */
+export function inTaughtOrder(topics: Topic[]): Topic[] {
+  const want = new Set(topics.map((t) => t.id));
+  const first = new Map<ID, { date: ISODate; logAt: number; pos: number }>();
+  for (const l of store.logs) {
+    l.topicIds.forEach((id, pos) => {
+      if (!want.has(id)) return;
+      const cur = first.get(id);
+      if (
+        !cur ||
+        l.date < cur.date ||
+        (l.date === cur.date && l.createdAt < cur.logAt)
+      ) {
+        first.set(id, { date: l.date, logAt: l.createdAt, pos });
+      }
+    });
+  }
+  const NEVER = '9999-12-31';
+  const key = (t: Topic) => {
+    const f = first.get(t.id);
+    return f
+      ? { date: f.date, logAt: f.logAt, pos: f.pos }
+      : { date: t.taughtOn ?? NEVER, logAt: Infinity, pos: 0 };
+  };
+  return [...topics].sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    return (
+      ka.date.localeCompare(kb.date) ||
+      ka.logAt - kb.logAt ||
+      ka.pos - kb.pos ||
+      a.createdAt - b.createdAt ||
+      a.id.localeCompare(b.id)
+    );
+  });
+}
+
 export const topicsOf = (chapterId: ID) =>
-  store.topics.filter((t) => t.chapterId === chapterId).sort((a, b) => a.createdAt - b.createdAt);
+  inTaughtOrder(store.topics.filter((t) => t.chapterId === chapterId));
 
 export const logsOf = (chapterId: ID) =>
   store.logs.filter((l) => l.chapterId === chapterId).sort((a, b) => b.date.localeCompare(a.date));
