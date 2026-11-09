@@ -1,4 +1,5 @@
 import { rerender } from '../app';
+import { enableDragSort } from '../drag';
 import {
   addTopic,
   chapterById,
@@ -12,8 +13,8 @@ import {
   moveTopic,
   resetTopicOrder,
   setLastTopic,
-  shiftSubtopic,
-  shiftTopic,
+  setSubtopicOrder,
+  setTopicOrder,
   store,
   subjectById,
   topicsOf,
@@ -38,11 +39,7 @@ import {
 /** Which chapter's page is in Reorder mode, if any. Not saved — just a view toggle. */
 let reorderingId = '';
 
-const arrows = (act: string, attrs: string, first: boolean, last: boolean) => `
-  <button class="btn sm ghost" data-act="${act}" data-dir="-1" ${attrs} ${first ? 'disabled' : ''}
-          title="Move earlier" aria-label="Move earlier">&uarr;</button>
-  <button class="btn sm ghost" data-act="${act}" data-dir="1" ${attrs} ${last ? 'disabled' : ''}
-          title="Move later" aria-label="Move later">&darr;</button>`;
+const HANDLE = '<span class="drag-handle" data-drag-handle title="Drag to reorder" aria-label="Drag to reorder">&#10303;</span>';
 
 export function render(id: string): string {
   const c = chapterById(id);
@@ -59,18 +56,17 @@ export function render(id: string): string {
   const customOrder = !!c.topicOrder?.length;
 
   const topicRows = topics
-    .map((t, ti) => {
+    .map((t) => {
       const log = classForTopic(t.id);
       const p = log ? ladderProgress(log) : null;
       const subs = t.subtopics ?? [];
       return `
-      <div class="row topic-row coded" ${codedStyle(s?.color)}>
+      <div class="row topic-row coded" data-drag-item="${t.id}" ${codedStyle(s?.color)}>
         <span class="grow">
           ${
             reordering
-              ? `<div class="title" style="display:flex;align-items:center;gap:4px">
-                   <span style="flex:1;min-width:0">${ti + 1}. ${esc(t.name)}</span>
-                   ${arrows('shift-topic', `data-id="${t.id}"`, ti === 0, ti === topics.length - 1)}
+              ? `<div class="title" style="display:flex;align-items:center;gap:8px">
+                   ${HANDLE}<span style="flex:1;min-width:0">${esc(t.name)}</span>
                  </div>`
               : `<div class="title">${esc(t.name)} ${t.isLast ? '<span class="pill last">last topic</span>' : ''}</div>`
           }
@@ -80,12 +76,11 @@ export function render(id: string): string {
           </div>
           ${
             subs.length && reordering
-              ? `<div style="margin-top:6px">${subs
+              ? `<div data-drag-list="sub:${t.id}" style="margin-top:6px;padding-left:12px">${subs
                   .map(
                     (name, i) => `
-                    <div style="display:flex;align-items:center;gap:4px;margin-top:4px;padding-left:12px">
-                      <span class="pill" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i + 1}. ${esc(name)}</span>
-                      ${arrows('shift-sub', `data-id="${t.id}" data-i="${i}"`, i === 0, i === subs.length - 1)}
+                    <div class="sub-drag" data-drag-item="${i}">
+                      ${HANDLE}<span class="pill" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
                     </div>`,
                   )
                   .join('')}</div>`
@@ -196,7 +191,7 @@ export function render(id: string): string {
            </div>
            ${
              reordering
-               ? '<p class="muted small">Use the arrows to set the order topics and sub topics come up in. This overrides the class dates, for the chapter page and chapter blurts both.</p>'
+               ? '<p class="muted small">Hold <b>&#10303;</b> and drag to set the order topics and sub topics come up in. This overrides the class dates, for the chapter page and chapter blurts both.</p>'
                : ''
            }`
         : ''
@@ -209,7 +204,7 @@ export function render(id: string): string {
            across two parts.</p>`
         : ''
     }
-    ${topics.length ? topicRows : '<div class="empty">No topics yet. They appear here as you log classes, or add them by hand.</div>'}
+    ${topics.length ? `<div data-drag-list="topics">${topicRows}</div>` : '<div class="empty">No topics yet. They appear here as you log classes, or add them by hand.</div>'}
     <div class="actions" style="margin-top:10px">
       <button class="btn" data-act="add-topic">+ Add topic</button>
     </div>
@@ -236,6 +231,15 @@ function gateText(finished: boolean, last: Topic | null, qualifies: boolean): st
 }
 
 export function wire(root: HTMLElement, id: string): void {
+  enableDragSort(root, async (list, ids) => {
+    if (list === 'topics') {
+      await setTopicOrder(id, ids);
+      await syncSchedule(); // an unstarted chapter part re-packs to the new order
+    } else if (list.startsWith('sub:')) {
+      await setSubtopicOrder(list.slice(4), ids.map(Number));
+    }
+  });
+
   onAct(root, async (act, el, ev) => {
     const c = chapterById(id);
     if (!c) return;
@@ -261,17 +265,6 @@ export function wire(root: HTMLElement, id: string): void {
     if (act === 'toggle-reorder') {
       reorderingId = reorderingId === id ? '' : id;
       rerender();
-      return;
-    }
-
-    if (act === 'shift-topic') {
-      await shiftTopic(id, el.dataset.id!, Number(el.dataset.dir) as -1 | 1);
-      await syncSchedule(); // an unstarted chapter part re-packs to the new order
-      return;
-    }
-
-    if (act === 'shift-sub') {
-      await shiftSubtopic(el.dataset.id!, Number(el.dataset.i), Number(el.dataset.dir) as -1 | 1);
       return;
     }
 

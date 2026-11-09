@@ -352,10 +352,12 @@ phone app — there is no sync.
 27. **DONE** — desktop self-update that actually lands: a GitHub CDN 504 on the installer download
     no longer kills the update (retries, streamed, size-checked, browser fallback), and 147 now
     closes itself outright before the installer runs instead of asking politely and lingering.
-28. **DONE** — **Reorder** on the chapter page: arrows to set the order of topics and of the sub
-    topics inside each one. A hand-set topic order overrides the taught-date order everywhere —
-    chapter page and chapter blurt parts — and topics added afterwards follow on at the end.
-    **Back to class order** drops it again.
+28. **DONE** (6.0.0) — **drag to reorder** on the chapter page: tap **Reorder**, then hold the ⠿
+    handle on a topic or sub topic and drag it. Pointer events, so it works by finger and by mouse;
+    tab swipes and pull-to-refresh ignore touches that start on a handle, background re-renders
+    wait for the drop, and the page auto-scrolls near the screen edges. A hand-set topic order
+    overrides the taught-date order everywhere (chapter page and chapter blurt parts); topics
+    added afterwards follow on at the end. **Back to class order** drops it again. `src/drag.ts`.
 
 ## Layout
 
@@ -373,6 +375,7 @@ phone app — there is no sync.
 | `src/updateBanner.ts`   | background update check + Restart now/Later banner              |
 | `src/pulltorefresh.ts`  | pull-to-refresh gesture, forces an immediate sync                |
 | `src/swipeNav.ts`       | swipe left/right between the four main tabs (touch only)         |
+| `src/drag.ts`           | drag to reorder (pointer events, touch + mouse) for chapter topics |
 | `src/util.ts`           | local-time date maths, `R147_GAPS`, repeat + drill gaps, ids, escaping |
 | `src/router.ts`         | hash routing (`#/blurt/b_1`, `#/log?chapter=c_1`)               |
 | `src/ui.ts`             | toast, modal prompt, confirm, click delegation                  |

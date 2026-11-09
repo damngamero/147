@@ -8,6 +8,7 @@ import { applyTheme } from './theme';
 import { parseHash, type Route } from './router';
 import { dueBy, syncSchedule } from './schedule';
 import { boot, subscribe } from './state';
+import { holdWhileDragging } from './drag';
 import { refreshNotifications } from './notify';
 import { maybeStartTour } from './tour';
 import { checkAndPrompt } from './updateBanner';
@@ -88,6 +89,9 @@ function viewFor(route: Route): { html: string; wire: (root: HTMLElement) => voi
 }
 
 function render(): void {
+  // Mid-drag, a background render would yank the list out from under the
+  // finger; hold it until the drop.
+  if (holdWhileDragging(render)) return;
   const route = parseHash();
   const view = viewFor(route);
 

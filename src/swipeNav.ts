@@ -1,4 +1,5 @@
 /** Swipe left/right between the four main tabs — touch only, phone-style. */
+import { onDragHandle } from './drag';
 import { parseHash } from './router';
 
 const ORDER = ['today', 'log', 'plan', 'subjects'] as const;
@@ -25,7 +26,7 @@ export function initSwipeNav(): void {
   window.addEventListener(
     'touchstart',
     (e) => {
-      if (anyModalOpen()) {
+      if (anyModalOpen() || onDragHandle(e.target)) {
         tracking = false;
         return;
       }

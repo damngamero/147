@@ -663,3 +663,32 @@ pre.code {
 [data-theme='neo'] .rate-topic { border: 2px solid var(--ink); background: var(--bg-2); }
 [data-theme='neo'] .rate-topic.done { background: var(--good-bg); }
 [data-theme='neo'] .rate-body { border-top: 2px solid var(--ink); }
+
+/* ---------- drag to reorder (chapter page) ---------- */
+.drag-handle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--fg-2);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.drag-handle:hover { background: rgba(127, 127, 127, 0.15); }
+.sub-drag { display: flex; align-items: center; gap: 6px; margin-top: 4px; border-radius: 10px; }
+.sub-drag.dragging { background: var(--bg-3); }
+[data-drag-item].dragging {
+  position: relative;
+  z-index: 20;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  cursor: grabbing;
+}
+[data-drag-item].dragging .drag-handle { cursor: grabbing; }
+body:has([data-drag-item].dragging) { user-select: none; -webkit-user-select: none; }

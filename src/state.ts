@@ -115,13 +115,8 @@ export function topicsOf(chapterId: ID): Topic[] {
   return [...listed, ...taught.filter((t) => !pos.has(t.id))];
 }
 
-/** Nudges a topic one place earlier (-1) or later (+1), saving the whole order. */
-export async function shiftTopic(chapterId: ID, topicId: ID, delta: -1 | 1): Promise<void> {
-  const ids = topicsOf(chapterId).map((t) => t.id);
-  const i = ids.indexOf(topicId);
-  const j = i + delta;
-  if (i === -1 || j < 0 || j >= ids.length) return;
-  [ids[i], ids[j]] = [ids[j], ids[i]];
+/** Saves a hand-set topic order for the chapter (from drag to reorder). */
+export async function setTopicOrder(chapterId: ID, ids: ID[]): Promise<void> {
   await updateChapter(chapterId, { topicOrder: ids });
 }
 
@@ -131,14 +126,17 @@ export async function resetTopicOrder(chapterId: ID): Promise<void> {
   await updateChapter(chapterId, { topicOrder: [] });
 }
 
-/** Nudges a sub topic one place earlier (-1) or later (+1) inside its topic. */
-export async function shiftSubtopic(topicId: ID, index: number, delta: -1 | 1): Promise<void> {
+/**
+ * Reorders a topic's sub topics. `order` lists the old positions in their new
+ * order; if the list changed underneath (a sync landed mid-drag) it is ignored
+ * rather than scrambling it.
+ */
+export async function setSubtopicOrder(topicId: ID, order: number[]): Promise<void> {
   const t = topicById(topicId);
-  const subs = t?.subtopics ? [...t.subtopics] : null;
-  const j = index + delta;
-  if (!t || !subs || index < 0 || index >= subs.length || j < 0 || j >= subs.length) return;
-  [subs[index], subs[j]] = [subs[j], subs[index]];
-  await updateTopic(topicId, { subtopics: subs });
+  const subs = t?.subtopics;
+  if (!t || !subs || order.length !== subs.length) return;
+  if (new Set(order).size !== subs.length || order.some((i) => !(i >= 0 && i < subs.length))) return;
+  await updateTopic(topicId, { subtopics: order.map((i) => subs[i]) });
 }
 
 export const logsOf = (chapterId: ID) =>

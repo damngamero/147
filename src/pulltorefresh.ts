@@ -1,4 +1,5 @@
 /** Pull-to-refresh, phone-style — drag down from the top of the page to sync. */
+import { onDragHandle } from './drag';
 
 const THRESHOLD = 68;
 const MAX_PULL = 100;
@@ -26,7 +27,7 @@ export function initPullToRefresh(onRefresh: () => Promise<unknown>): void {
   window.addEventListener(
     'touchstart',
     (e) => {
-      if (refreshing || anyModalOpen()) return;
+      if (refreshing || anyModalOpen() || onDragHandle(e.target)) return;
       const top = document.scrollingElement?.scrollTop ?? 0;
       if (top > 0) return;
       startY = e.touches[0].clientY;
