@@ -692,3 +692,18 @@ pre.code {
 }
 [data-drag-item].dragging .drag-handle { cursor: grabbing; }
 body:has([data-drag-item].dragging) { user-select: none; -webkit-user-select: none; }
+
+/* ---------- log a class: which sub topics this class covered ---------- */
+.topic-item.picking { flex-wrap: wrap; }
+.sub-picks {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 0 4px 8px 27px;
+}
+.sub-picks-label { font-size: 12px; color: var(--fg-3); margin-right: 2px; }
+.sub-pick {
+  font: inherit; font-size: 12px; line-height: 1.2; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg-2); color: var(--fg-3); cursor: pointer;
+}
+.sub-pick.on { color: var(--fg); border-color: var(--accent-line); background: var(--bg-3); font-weight: 600; }
+[data-theme='neo'] .sub-pick { border: 2px solid var(--ink); }
+[data-theme='neo'] .sub-pick.on { background: var(--accent); color: var(--on-accent); }

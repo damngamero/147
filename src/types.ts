@@ -77,6 +77,14 @@ export interface ClassLog {
   /** free text: what the class covered / what I did */
   what: string;
   topicIds: ID[];
+  /**
+   * The sub topics this class actually covered, per ticked topic. A topic that
+   * gained sub topics over several classes would otherwise drag every old one
+   * back into each new class's blurt. A topic missing here (or every class
+   * logged before this existed) means all of its sub topics. Keyed by topic
+   * id, never by anything typed, so no user text becomes a Firestore field.
+   */
+  subtopics?: Record<ID, string[]>;
   createdAt: number;
   updatedAt: number;
 }

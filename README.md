@@ -358,6 +358,14 @@ phone app — there is no sync.
     wait for the drop, and the page auto-scrolls near the screen edges. A hand-set topic order
     overrides the taught-date order everywhere (chapter page and chapter blurt parts); topics
     added afterwards follow on at the end. **Back to class order** drops it again. `src/drag.ts`.
+29. **DONE** (6.0.1) — a **class blurt only asks about the sub topics that class taught**. A class
+    used to remember which topics it covered but not which sub topics, so adding two new sub
+    topics to an old topic dragged all its old ones into the new class's blurt too. Now: sub
+    topics added to a topic while logging a class go into that class's blurt alone (and the topic
+    gets ticked); a ticked topic shows its sub topics as chips to pick exactly what the class
+    covered; and every other class with that topic gets pinned to the sub topics it had before,
+    so the new ones don't leak backwards either. Chapter blurts still cover whole topics. Classes
+    logged before this keep covering all of a topic's sub topics.
 
 ## Layout
 

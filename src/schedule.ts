@@ -617,6 +617,31 @@ export function topicsForBlurt(b: Blurt): Topic[] {
     .filter((t): t is Topic => !!t);
 }
 
+/**
+ * The sub topics of `t` that a class covered: what the class saved for it, in
+ * the topic's current order, or every sub topic if it saved nothing (older
+ * classes, or a class that covered the whole topic). If every saved name has
+ * since been renamed or deleted it falls back to all of them rather than none.
+ */
+export function classSubtopics(log: ClassLog | undefined, t: Topic): string[] {
+  const all = t.subtopics ?? [];
+  const want = log?.subtopics?.[t.id];
+  if (!want?.length) return all;
+  const set = new Set(want.map((n) => n.toLowerCase()));
+  const mine = all.filter((n) => set.has(n.toLowerCase()));
+  return mine.length ? mine : all;
+}
+
+/**
+ * The sub topics a blurt asks about for one of its topics. A class blurt only
+ * covers what that class taught — not sub topics the topic picked up in other
+ * classes. Chapter blurts and drills cover the whole topic.
+ */
+export function subtopicsForBlurt(b: Blurt, t: Topic): string[] {
+  if (b.kind !== 'class') return t.subtopics ?? [];
+  return classSubtopics(store.logs.find((l) => l.id === b.refId), t);
+}
+
 /* ---------- actions ---------- */
 
 function average(scores: Record<ID, number>): number | null {

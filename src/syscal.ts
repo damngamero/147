@@ -9,7 +9,7 @@
  * Samsung Calendar's calendar list, hideable with one tap, and never mixes
  * with anything else on the device.
  */
-import { CYCLE_LABEL, openBlurts, partLabel, topicsForBlurt } from './schedule';
+import { CYCLE_LABEL, openBlurts, partLabel, subtopicsForBlurt, topicsForBlurt } from './schedule';
 import { chapterById, subjectById } from './state';
 import type { Blurt } from './types';
 
@@ -69,7 +69,7 @@ function notesOf(b: Blurt): string {
   const chapter = chapterById(b.chapterId)?.name ?? '';
   const names = topicsForBlurt(b).flatMap((t) => [
     `• ${t.name}`,
-    ...(t.subtopics ?? []).map((x) => `    – ${x}`),
+    ...subtopicsForBlurt(b, t).map((x) => `    – ${x}`),
   ]);
   const questions = methodOf(b) === 'questions';
   return [

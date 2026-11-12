@@ -13,6 +13,7 @@ import {
   topicScoreFromSubs,
   snoozeBlurt,
   topicsForBlurt,
+  subtopicsForBlurt,
 } from '../schedule';
 import { chapterById, store, subjectById, topicById } from '../state';
 import type { Blurt, ID } from '../types';
@@ -233,7 +234,8 @@ export function render(id: string): string {
 
   const rows = topics
     .map((t) => {
-      const subs = t.subtopics ?? [];
+      // A class blurt only asks about the sub topics that class taught.
+      const subs = subtopicsForBlurt(b, t);
       const mine = subScores[t.id] ?? {};
       const done = scores[t.id] !== undefined;
       const shut = collapsed.has(t.id);
@@ -307,7 +309,7 @@ export function render(id: string): string {
                 .map(
                   (t) =>
                     `<span class="pill">${esc(t.name)}${
-                      t.subtopics?.length ? ` <span class="dim">(${t.subtopics.length})</span>` : ''
+                      subtopicsForBlurt(b, t).length ? ` <span class="dim">(${subtopicsForBlurt(b, t).length})</span>` : ''
                     }</span>`,
                 )
                 .join('')
@@ -393,13 +395,16 @@ export function wire(root: HTMLElement, id: string): void {
     if (act === 'sub-score') {
       const topic = el.dataset.topic!;
       const t = topicById(topic);
-      const name = t?.subtopics?.[Number(el.dataset.i)];
-      if (!t?.subtopics || name === undefined) return;
+      const blurt = blurtById(id);
+      // Same list the screen rendered, so data-i points at the right name.
+      const subs = t && blurt ? subtopicsForBlurt(blurt, t) : [];
+      const name = subs[Number(el.dataset.i)];
+      if (!t || name === undefined) return;
       const n = Number(el.dataset.n);
       const mine = (subScores[topic] ??= {});
       if (mine[name] === n) delete mine[name];
       else mine[name] = n;
-      const derived = topicScoreFromSubs(t.subtopics, mine);
+      const derived = topicScoreFromSubs(subs, mine);
       if (derived === null) delete scores[topic];
       else {
         // Last sub topic in — fold it away so the next topic is in view.

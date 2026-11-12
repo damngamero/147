@@ -15,7 +15,7 @@ import {
   topicsOf,
   updateTopic,
 } from '../state';
-import type { ClassLog } from '../types';
+import type { ClassLog, Topic } from '../types';
 import { askAction, askText, confirmBox, onAct, toast } from '../ui';
 import { classLabel, esc, fmtDate, splitList, subjColor, todayISO } from '../util';
 
@@ -32,6 +32,27 @@ interface Draft {
   pendingTopic: string;
   /** Sub topics for the new topics, keyed by lower-cased name — they get created together on save. */
   newTopicSubs: Record<string, string[]>;
+  /**
+   * Ticked existing topics -> the sub topics this class covered. No entry =
+   * all of them. Sub topics added to a topic from this form land here on
+   * their own, so a class that added two new pieces to an old topic blurts
+   * those two, not everything the topic has collected.
+   */
+  covered: Record<string, string[]>;
+  /** Sub topics added to existing topics from this form — other classes get pinned so these don't leak into them. */
+  added: Record<string, string[]>;
+}
+
+const lower = (s: string) => s.trim().toLowerCase();
+
+/** The sub topics of `t` this draft says the class covered (all of them if it says nothing). */
+function coveredOf(d: Draft, t: Topic): string[] {
+  const all = t.subtopics ?? [];
+  const want = d.covered[t.id];
+  if (!want) return all;
+  const set = new Set(want.map(lower));
+  const mine = all.filter((n) => set.has(lower(n)));
+  return mine.length ? mine : all;
 }
 
 /** Session-only, not persisted — searches by class name, topic name, or notes. */
@@ -58,6 +79,8 @@ function blankDraft(chapterId: string): Draft {
     newTopicNames: [],
     pendingTopic: '',
     newTopicSubs: {},
+    covered: {},
+    added: {},
   };
 }
 
@@ -80,6 +103,8 @@ function ensureDraft(route: Route): Draft {
         newTopicNames: [],
         pendingTopic: '',
         newTopicSubs: {},
+        covered: Object.fromEntries(Object.entries(l.subtopics ?? {}).map(([k, v]) => [k, [...v]])),
+        added: {},
       };
       return draft;
     }
@@ -162,16 +187,33 @@ function formHtml(d: Draft): string {
   const existing = topics
     .map((t) => {
       const on = d.topicIds.has(t.id);
+      const subs = t.subtopics ?? [];
+      // Ticked with sub topics: pick which ones this class actually covered.
+      const picking = on && subs.length > 0;
+      const covered = new Set(coveredOf(d, t).map(lower));
+      const picks = picking
+        ? `<div class="sub-picks">
+             <span class="sub-picks-label">This class:</span>
+             ${subs
+               .map((n, i) => {
+                 const sel = covered.has(lower(n));
+                 return `<button type="button" class="sub-pick ${sel ? 'on' : ''}" data-act="toggle-sub"
+                           data-id="${t.id}" data-i="${i}" aria-pressed="${sel}">${sel ? '&check; ' : ''}${esc(n)}</button>`;
+               })
+               .join('')}
+           </div>`
+        : '';
       return `
-      <div class="topic-item ${on ? 'on' : ''}">
+      <div class="topic-item ${on ? 'on' : ''} ${picking ? 'picking' : ''}">
         <label class="grow topic-check">
           <input type="checkbox" data-topic="${t.id}" ${on ? 'checked' : ''} />
           <span class="grow">
             <span class="topic-name">${esc(t.name)} ${t.isLast ? '<span class="pill last">last</span>' : ''}</span>
-            ${subsLine(t.subtopics)}
+            ${picking ? `<span class="topic-subs">${covered.size} of ${subs.length} sub topics in this class's blurt</span>` : subsLine(t.subtopics)}
           </span>
         </label>
         <button type="button" class="icon-btn" data-act="topic-menu" data-id="${t.id}" title="Sub topics, rename, delete">&hellip;</button>
+        ${picks}
       </div>`;
     })
     .join('');
@@ -351,6 +393,8 @@ export function wire(root: HTMLElement, route: Route): void {
       else d.topicIds.delete(t.dataset.topic);
       t.closest('.topic-item')?.classList.toggle('on', on);
       syncCounts();
+      // Ticking a topic with sub topics opens its "this class" picker.
+      if (topicById(t.dataset.topic)?.subtopics?.length) rerender();
     }
   });
 
@@ -478,9 +522,28 @@ export function wire(root: HTMLElement, route: Route): void {
         ],
       });
       if (pick === 'subs') {
-        const text = await askSubtopics(t.name, t.subtopics ?? []);
+        const before = t.subtopics ?? [];
+        const text = await askSubtopics(t.name, before);
         if (text === null) return;
-        await updateTopic(t.id, { subtopics: splitList(text) });
+        const after = splitList(text);
+        const had = new Set(before.map(lower));
+        const added = after.filter((n) => !had.has(lower(n)));
+        // Sub topics added here were taught in THIS class, so this class's
+        // blurt covers them — not the ones the topic already had.
+        if (added.length) {
+          const prior = d.covered[t.id];
+          const keep = prior ? prior.filter((n) => after.some((a) => lower(a) === lower(n))) : [];
+          d.covered[t.id] = [...keep, ...added];
+          d.topicIds.add(t.id);
+        }
+        const stillAdded = (d.added[t.id] ?? []).filter((n) => after.some((a) => lower(a) === lower(n)));
+        d.added[t.id] = [...stillAdded, ...added];
+        await updateTopic(t.id, { subtopics: after });
+        if (added.length && had.size) {
+          toast(
+            `This class's blurt gets only the ${added.length} new one${added.length === 1 ? '' : 's'} — tap chips to change`,
+          );
+        }
         rerender();
       }
       if (pick === 'rename') {
@@ -504,6 +567,26 @@ export function wire(root: HTMLElement, route: Route): void {
           rerender();
         }
       }
+      return;
+    }
+
+    if (act === 'toggle-sub') {
+      ev.preventDefault();
+      const t = topicById(el.dataset.id!);
+      const all = t?.subtopics ?? [];
+      const name = all[Number(el.dataset.i)];
+      if (!t || name === undefined) return;
+      const cur = new Set(coveredOf(d, t).map(lower));
+      if (cur.has(lower(name))) cur.delete(lower(name));
+      else cur.add(lower(name));
+      if (!cur.size) {
+        toast("Keep at least one — untick the topic if this class didn't cover it");
+        return;
+      }
+      const next = all.filter((n) => cur.has(lower(n)));
+      if (next.length === all.length) delete d.covered[t.id];
+      else d.covered[t.id] = next;
+      rerender();
       return;
     }
 
@@ -564,6 +647,8 @@ export function wire(root: HTMLElement, route: Route): void {
         topicIds: [...d.topicIds],
         newTopicNames,
         newTopicSubtopics: d.newTopicSubs,
+        coveredSubtopics: d.covered,
+        addedSubtopics: d.added,
       });
       draft = null;
       draftKey = '';

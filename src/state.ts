@@ -342,6 +342,10 @@ export interface ClassLogInput {
   newTopicNames: string[];
   /** sub topics typed for those new topics, keyed by lower-cased name */
   newTopicSubtopics?: Record<string, string[]>;
+  /** For ticked existing topics: just the sub topics this class covered. Missing = all of them. */
+  coveredSubtopics?: Record<ID, string[]>;
+  /** Sub topics added to existing topics while logging this class — taught here, not before. */
+  addedSubtopics?: Record<ID, string[]>;
 }
 
 export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
@@ -351,6 +355,16 @@ export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
     if (name.trim()) created.push(await addTopic(input.chapterId, name, input.date, subs));
   }
   const topicIds = [...input.topicIds, ...created.map((t) => t.id)];
+
+  // Only ticked topics, only non-empty lists, only names the topic still has.
+  // Always an object, never undefined — Firestore's setDoc rejects undefined.
+  const subtopics: Record<ID, string[]> = {};
+  for (const id of input.topicIds) {
+    const have = topicById(id)?.subtopics ?? [];
+    const want = new Set((input.coveredSubtopics?.[id] ?? []).map((n) => n.toLowerCase()));
+    const keep = have.filter((n) => want.has(n.toLowerCase()));
+    if (keep.length && keep.length < have.length) subtopics[id] = keep;
+  }
 
   // The earliest class covering a topic is what the 1-4-7 ladder counts from.
   for (const id of topicIds) {
@@ -366,6 +380,22 @@ export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
   // even one blank-named class (i.e. everyone, since it's optional).
   const name = input.name?.trim() ?? '';
 
+  // Sub topics added in this class were taught in this class. Any other class
+  // with the topic that says "all of its sub topics" meant all the ones it had
+  // back then, so pin it to that list before the new ones can leak in.
+  const pinned: ClassLog[] = [];
+  for (const [tid, added] of Object.entries(input.addedSubtopics ?? {})) {
+    const fresh = new Set(added.map((n) => n.toLowerCase()));
+    const before = (topicById(tid)?.subtopics ?? []).filter((n) => !fresh.has(n.toLowerCase()));
+    if (!fresh.size || !before.length) continue;
+    for (const l of store.logs) {
+      if (l.id === input.id || !l.topicIds.includes(tid) || l.subtopics?.[tid]?.length) continue;
+      l.subtopics = { ...(l.subtopics ?? {}), [tid]: before };
+      pinned.push(l);
+    }
+  }
+  if (pinned.length) await db.putMany('logs', pinned);
+
   const existing = input.id ? logById(input.id) : undefined;
   if (existing) {
     existing.date = input.date;
@@ -374,6 +404,7 @@ export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
     existing.name = name;
     existing.what = input.what;
     existing.topicIds = topicIds;
+    existing.subtopics = subtopics;
     await db.put('logs', existing);
     emit();
     return existing;
@@ -387,6 +418,7 @@ export async function saveClassLog(input: ClassLogInput): Promise<ClassLog> {
     name,
     what: input.what,
     topicIds,
+    subtopics,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
